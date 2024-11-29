@@ -1,84 +1,141 @@
-use anchor_lang::prelude::*;
-use anchor_lang::system_program;
+use anchor_lang::{prelude::*, system_program};
 
-pub fn issue(ctx: Context<FBIssue>, price: u64, goalcount: u64, ipid: u64) -> Result<()> {
-    let contract_account = &mut ctx.accounts.contract;
-    let signer = &mut ctx.accounts.signer;
-    contract_account.author = signer.to_account_info().key();
-    contract_account.ipid = ipid;
-    contract_account.price = price;
-    contract_account.goalcount = goalcount;
-    contract_account.headcount = 0;
+use crate::{IPAccount, IPOwnership, UserAccount};
+use crate::general::ErrorCode;
+
+pub fn publish(ctx: Context<FBPublish>, price: u64, goalcount: u64, _ipid: String) -> Result<()> {
+    let ip_account = &mut ctx.accounts.ip_account;
+    let contract= &mut ctx.accounts.fbci_account;
+
+    require!(ip_account.ownership.eq(&IPOwnership::PRIVATE), ErrorCode::WrongIPOwnership);
+    require!(price > 0, ErrorCode::InvalidPrice);
+
+    ip_account.ownership = IPOwnership::PUBLISHED;
+    contract.ip_account = ip_account.key();
+    contract.price = price;
+    contract.goalcount = goalcount;
+    contract.currcount = 0;
+    contract.withdrawal_count = 0;
 
     Ok(())
 }
 
-pub fn buy(ctx: Context<FBBuy>, author: Pubkey, ipid: u64) -> Result<()> {
-    let buyer = &mut ctx.accounts.signer;
-    let contract = &mut ctx.accounts.contract;
-    let buyer_account = &mut ctx.accounts.buyer_account;
-    require!(buyer.get_lamports() >= contract.price, ErrorCode::LamportsNotEnough);
-    require!(contract.headcount < contract.goalcount, ErrorCode::GoalAlreadyAchieved);
+pub fn pay(ctx: Context<FBPay>, _ipid: String) -> Result<()> {
+    let fbci = &mut ctx.accounts.fbci_account;
+    let ip_account = &mut ctx.accounts.ip_account;
 
-    buyer_account.buyer = buyer.key();
-    contract.headcount += 1;
+    require!(ctx.accounts.signer.get_lamports() >= fbci.price, ErrorCode::LamportsNotEnough);
+    require!(ip_account.ownership.eq(&IPOwnership::PUBLISHED), ErrorCode::GoalAlreadyAchieved);
+    require!(fbci.currcount < fbci.goalcount, ErrorCode::GoalAlreadyAchieved);
+
+    fbci.currcount += 1;
+    if fbci.currcount == fbci.goalcount {
+        ip_account.ownership = IPOwnership::PUBLIC;
+    }
 
     let transfer = system_program::Transfer {
-        from: buyer.to_account_info(),
-        to:   contract.to_account_info(),
+        from: ctx.accounts.signer.to_account_info(),
+        to: fbci.to_account_info(),
     };
-    let cpi= CpiContext::new(ctx.accounts.system_program.to_account_info(), transfer);
-    system_program::transfer(cpi, contract.price)
+    let cpi = CpiContext::new(
+        ctx.accounts.system_program.to_account_info(), 
+        transfer);
+    system_program::transfer(cpi, fbci.price)
 }
 
+pub fn withdraw(ctx: Context<FBWithdraw>, _ipid: String) -> Result<()> {
+    let fbci = &mut ctx.accounts.fbci_account;
+    let owner = &mut ctx.accounts.owner_account;
+    let withdrawable = (fbci.currcount - fbci.withdrawal_count) * fbci.price;
 
+    require!(fbci.currcount - fbci.withdrawal_count > 0, ErrorCode::ContractHasNoLamports);
+
+    fbci.withdrawal_count = fbci.currcount;
+    **fbci.to_account_info().try_borrow_mut_lamports()? -= withdrawable;
+    **owner.to_account_info().try_borrow_mut_lamports()? += withdrawable;
+
+    Ok(())
+}
 
 #[derive(Accounts)]
-#[instruction(ipid: u64)]
-pub struct FBIssue<'info> {
+#[instruction(price: u64, goalcount: u64, ipid: String)]
+pub struct FBPublish<'info> {
     #[account(
-        init, payer = signer, space = 8 + FBContractAccount::INIT_SPACE,
-        seeds = [b"fb-contract", signer.key().as_ref(), ipid.to_le_bytes().as_ref()], bump 
+        init, payer = signer, space = 8 + FBCIAccount::INIT_SPACE,
+        seeds = [b"fbci", ipid.as_bytes().as_ref()], bump
     )]
-    contract: Account<'info, FBContractAccount>,
-    #[account(mut)]
+    fbci_account: Account<'info, FBCIAccount>,
+
+    #[account(mut, seeds = [b"ip", ipid.as_bytes().as_ref()], bump)]
+    ip_account: Account<'info, IPAccount>,
+
+    #[account(mut, constraint = ip_account.owner.eq(&owner_account.key()))]
+    owner_account: Account<'info, UserAccount>,
+
+    #[account(mut, constraint = signer.key().eq(&owner_account.useraddr))]
     signer: Signer<'info>,
+
     system_program: Program<'info, System>
 }
 
 #[derive(Accounts)]
-#[instruction(author: Pubkey, ipid: u64)]
-pub struct FBBuy<'info> {
-    #[account(mut, seeds = [b"fb-contract", author.as_ref(), ipid.to_le_bytes().as_ref()], bump)]
-    contract: Account<'info, FBContractAccount>,
+#[instruction(ipid: String)]
+pub struct FBPay<'info> {
     #[account(
-        init, payer = signer, space = 8 + FBContractAccount::INIT_SPACE,
-        seeds = [b"fb-buyer", signer.key().as_ref(), contract.key().as_ref()], bump
+        init, payer = signer, space = 8 + FBCPAccount::INIT_SPACE,
+        seeds = [b"fbcp", user_account.key().as_ref(), fbci_account.key().as_ref()], bump
     )]
-    buyer_account: Account<'info, BuyerAccount>,
+    fbcp_account: Account<'info, FBCPAccount>,
+
+    #[account(mut, seeds = [b"fbci", ipid.as_bytes().as_ref()], bump)]
+    fbci_account: Account<'info, FBCIAccount>,
+
+    #[account(
+        mut, seeds = [b"ip", ipid.as_bytes().as_ref()], bump,
+        constraint = ip_account.ownership.eq(&IPOwnership::PUBLISHED)
+    )]
+    ip_account: Account<'info, IPAccount>,
+
+    #[account(seeds = [b"user", signer.key().as_ref()], bump)]
+    user_account: Account<'info, UserAccount>,
+
     #[account(mut)]
     signer: Signer<'info>,
+
+    system_program: Program<'info, System>
+}
+
+#[derive(Accounts)]
+#[instruction(ipid: String)]
+pub struct FBWithdraw<'info> {
+    #[account(mut, seeds = [b"fbci", ipid.as_bytes().as_ref()], bump)]
+    fbci_account: Account<'info, FBCIAccount>,
+
+    #[account(mut, seeds = [b"ip", ipid.as_bytes().as_ref()], bump)]
+    ip_account: Account<'info, IPAccount>,
+
+    #[account(mut, constraint = ip_account.owner.eq(&owner_account.key()))]
+    owner_account: Account<'info, UserAccount>,
+
+    #[account(mut, constraint = signer.key().eq(&owner_account.useraddr))]
+    signer: Signer<'info>,
+
     system_program: Program<'info, System>
 }
 
 #[account]
 #[derive(InitSpace)]
-pub struct FBContractAccount {
-    author: Pubkey,
-    ipid: u64,
-    price:  u64,
+pub struct FBCIAccount { // Finite Buyout Contract Issue Account
+    ip_account: Pubkey,
+    price: u64,
     goalcount: u64,
-    headcount: u64
+    currcount: u64,
+    withdrawal_count: u64
 }
 
 #[account]
 #[derive(InitSpace)]
-pub struct BuyerAccount {
-    buyer: Pubkey
+pub struct FBCPAccount { // Finite Buyout Contract Payment Account
+    
 }
 
-#[error_code]
-pub enum ErrorCode {
-    LamportsNotEnough,
-    GoalAlreadyAchieved,
-}

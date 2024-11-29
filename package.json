@@ -5,9 +5,10 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.29.0",
-    "@solana/web3.js": "1.78.4",
+    "@types/chai-as-promised": "^8.0.1",
     "assert": "*",
-    "bn.js": "*"
+    "bn.js": "*",
+    "chai-as-promised": "^8.0.1"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.1",

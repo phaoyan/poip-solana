@@ -1,46 +1,81 @@
+mod general;
 mod contracts;
 
 use anchor_lang::prelude::*;
+use general::*;
 use contracts::*;
 use finite_buyout::*;
 use compensative_buyout::*;
-use limited_compensative_buyout::*;
+use goalmax_buyout::*;
 
 
 
 // This is your program's public key and it will update
 // automatically when you build the project.
-declare_id!("11111111111111111111111111111111");
+declare_id!("6xSaDiBZ4R6i7Rk47zcRvuuNGeJ8NRApRfPqWksS7Xe2");
 
 #[program]
 mod poip {
     use super::*;
     
+    pub fn create_user_account(ctx: Context<CreateUserAccount>, username: String) -> Result<()> {
+        general::create_user_account(ctx, username)
+    }
+
+    pub fn delete_user_account(ctx: Context<DeleteUserAccount>) -> Result<()> {
+        general::delete_user_account(ctx)
+    }
+
+    pub fn create_ip_account(ctx: Context<CreateIPAccount>, ipid: String, title: String) -> Result<()> {
+        general::create_ip_account(ctx, ipid, title)
+    }
+
+    pub fn delete_ip_account(ctx: Context<DeleteIPAccount>, ipid: String) -> Result<()> {
+        general::delete_ip_account(ctx, ipid)
+    }
     
-    pub fn fb_issue(ctx: Context<FBIssue>, price: u64, goalcount: u64, ipid: u64) -> Result<()> {
-        finite_buyout::issue(ctx, price, goalcount, ipid)
+    pub fn fb_publish(ctx: Context<FBPublish>, price: u64, goalcount: u64, ipid: String) -> Result<()> {
+        finite_buyout::publish(ctx, price, goalcount, ipid)
     }
 
-    pub fn fb_buy(ctx: Context<FBBuy>, author: Pubkey, ipid: u64) -> Result<()> {
-        finite_buyout::buy(ctx, author, ipid)
+    pub fn fb_pay(ctx: Context<FBPay>, ipid: String) -> Result<()> {
+        finite_buyout::pay(ctx, ipid)
     }
 
-    pub fn cb_issue(ctx: Context<CBIssue>, price: u64, goalcount: u64) -> Result<()>{
-        compensative_buyout::issue(ctx, price, goalcount)
+    pub fn fb_withdraw(ctx: Context<FBWithdraw>, ipid: String) -> Result<()> {
+        finite_buyout::withdraw(ctx, ipid)
     }
 
-    pub fn cb_buy(ctx: Context<CBBuy>) -> Result<()> {
-        compensative_buyout::buy(ctx)
+    pub  fn cb_publish(ctx: Context<CBPublish>, price: u64, goalcount: u64, ipid: String) -> Result<()> {
+        compensative_buyout::publish(ctx, price, goalcount, ipid)
     }
 
-    pub fn lcb_issue(ctx: Context<LCBIssue>, price: u64, goalcount: u64, maxcount: u64) -> Result<()> {
-        limited_compensative_buyout::issue(ctx, price, goalcount, maxcount)
+    pub fn cb_pay(ctx: Context<CBPay>, ipid: String) -> Result<()> {
+        compensative_buyout::pay(ctx, ipid)
     }
 
-    pub fn lcb_buy(ctx: Context<LCBBuy>) -> Result<()> {
-        limited_compensative_buyout::buy(ctx)
+    pub fn cb_withraw(ctx: Context<CBWithdraw>, ipid: String) -> Result<()> {
+        compensative_buyout::withdraw(ctx, ipid)
+    }
+
+    pub fn cb_bonus(ctx: Context<CBBonus>, ipid: String) -> Result<()> {
+        compensative_buyout::bonus(ctx, ipid)
+    }
+
+    pub  fn gm_publish(ctx: Context<GMPublish>, price: u64, goalcount: u64, maxcount: u64, ipid: String) -> Result<()> {
+        goalmax_buyout::publish(ctx, price, goalcount, maxcount, ipid)
+    }
+
+    pub fn gm_pay(ctx: Context<GMPay>, ipid: String) -> Result<()> {
+        goalmax_buyout::pay(ctx, ipid)
+    }
+
+    pub fn gm_withraw(ctx: Context<GMWithdraw>, ipid: String) -> Result<()> {
+        goalmax_buyout::withdraw(ctx, ipid)
+    }
+
+    pub fn gm_bonus(ctx: Context<GMBonus>, ipid: String) -> Result<()> {
+        goalmax_buyout::bonus(ctx, ipid)
     }
 }
-
-
 

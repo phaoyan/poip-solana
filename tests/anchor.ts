@@ -10,6 +10,14 @@ import chaiAsPromised from "chai-as-promised";
 
 chai.use(chaiAsPromised)
 
+const IP_OWNERSHIP_PRIVATE = 1
+const IP_OWNERSHIP_PUBLISHED = 2
+const IP_OWNERSHIP_PUBLIC = 3
+
+const CONTRACT_TYPE_FINITE_BUYOUT = 1
+const CONTRACT_TYPE_COMPENSATIVE_BUYOUT = 2
+const CONTRACT_TYPE_GOALMAX_BUYOUT = 3
+
 describe("Test", async () => {
   // Configure the client to use the local cluster
   anchor.setProvider(anchor.AnchorProvider.env());
@@ -20,9 +28,7 @@ describe("Test", async () => {
   const wallet_sk = Uint8Array.from(JSON.parse(readFileSync("/home/solana/poip-solana/tests/wallets/id.json", "utf-8")))
   const wallet = anchor.web3.Keypair.fromSecretKey(wallet_sk)
 
-  const IP_OWNERSHIP_PRIVATE = 1
-  const IP_OWNERSHIP_PUBLISHED = 2
-  const IP_OWNERSHIP_PUBLIC = 3
+
 
   const USER_COUNT = 21
   const USERS: {
@@ -136,7 +142,7 @@ describe("Test", async () => {
 
   it("fb-publish", async ()=>{
     const inst_fbci = await program.methods
-      .fbPublish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), new BN(0), IP_1.ipid)
+      .publish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), new BN(0), IP_1.ipid, new BN(CONTRACT_TYPE_FINITE_BUYOUT))
       .signers([USERS[0].keypair])
       .accounts({
         ciAccount: IP_1.contract_account,
@@ -165,11 +171,13 @@ describe("Test", async () => {
       let user = USERS[i]
       let tx = new anchor.web3.Transaction()
       const [fbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
+      const [fbcc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cc"), user.user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
       const inst_fbcp = await program.methods
-        .fbPay(IP_1.ipid)
+        .pay(IP_1.ipid)
         .signers([user.keypair])
         .accounts({
           cpAccount: fbcp_account,
+          ccAccount: fbcc_account,
           ciAccount: IP_1.contract_account,
           ipAccount:   IP_1.ip_account,
           userAccount: user.user_account,
@@ -185,11 +193,13 @@ describe("Test", async () => {
 
     let except_tx = new anchor.web3.Transaction()
     const [fbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), USERS[4].user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
+    const [fbcc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cc"), USERS[4].user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
     const inst_fbcp_after_goal_achieved = await program.methods
-      .fbPay(IP_1.ipid)
+      .pay(IP_1.ipid)
       .signers([USERS[4].keypair])
       .accounts({
         cpAccount: fbcp_account,
+        ccAccount: fbcc_account,
         ciAccount: IP_1.contract_account,
         ipAccount:   IP_1.ip_account,
         userAccount: USERS[4].user_account,
@@ -206,7 +216,7 @@ describe("Test", async () => {
     assert(fbci_account_data_ori.withdrawalCount.eq(new BN(0)))
 
     const inst_withdraw = await program.methods
-      .fbWithdraw(IP_1.ipid)
+      .withraw(IP_1.ipid)
       .signers([USERS[0].keypair])
       .accounts({
         ciAccount: IP_1.contract_account,
@@ -228,7 +238,7 @@ describe("Test", async () => {
 
   it("cb-publish", async ()=>{
     const inst_dup = await program.methods
-      .cbPublish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), new BN(0), IP_1.ipid)
+      .publish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), new BN(0), IP_1.ipid, new BN(CONTRACT_TYPE_COMPENSATIVE_BUYOUT))
       .signers([USERS[0].keypair])
       .accounts({
         ciAccount: IP_1.contract_account,
@@ -243,7 +253,7 @@ describe("Test", async () => {
     
 
     const inst_cbci = await program.methods
-      .cbPublish(new BN(IP_2.contract_data.price), new BN(IP_2.contract_data.goalcount), new BN(0), IP_2.ipid)
+      .publish(new BN(IP_2.contract_data.price), new BN(IP_2.contract_data.goalcount), new BN(0), IP_2.ipid, new BN(CONTRACT_TYPE_COMPENSATIVE_BUYOUT))
       .signers([USERS[0].keypair])
       .accounts({
         ciAccount: IP_2.contract_account,
@@ -271,11 +281,13 @@ describe("Test", async () => {
       let tx = new anchor.web3.Transaction()
       let user = USERS[i]
       const [cbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
+      const [cbcc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cc"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
       const inst_cbcp = await program.methods
-        .cbPay(IP_2.ipid)
+        .pay(IP_2.ipid)
         .signers([user.keypair])
         .accounts({
           cpAccount: cbcp_account,
+          ccAccount: cbcc_account,
           ciAccount: IP_2.contract_account,
           ipAccount:   IP_2.ip_account,
           userAccount: user.user_account,
@@ -299,7 +311,7 @@ describe("Test", async () => {
     assert(cbci_account_data_ori.withdrawalCount.eq(new BN(0)))
 
     const inst_withdraw = await program.methods
-      .cbWithraw(IP_2.ipid)
+      .withraw(IP_2.ipid)
       .signers([USERS[0].keypair])
       .accounts({
         ciAccount: IP_2.contract_account,
@@ -326,7 +338,7 @@ describe("Test", async () => {
       let tx = new anchor.web3.Transaction()
       const [cbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
       const inst_bonus = await program.methods
-        .cbBonus(IP_2.ipid)
+        .bonus(IP_2.ipid)
         .accounts({
           ciAccount: IP_2.contract_account,
           cpAccount: cbcp_account,
@@ -349,7 +361,7 @@ describe("Test", async () => {
 
   it("gm-publish", async()=>{
     const inst_ci = await program.methods
-      .gmPublish(new BN(IP_3.contract_data.price), new BN(IP_3.contract_data.goalcount), new BN(IP_3.contract_data.maxcount), IP_3.ipid)
+      .publish(new BN(IP_3.contract_data.price), new BN(IP_3.contract_data.goalcount), new BN(IP_3.contract_data.maxcount), IP_3.ipid, new BN(CONTRACT_TYPE_GOALMAX_BUYOUT))
       .signers([USERS[0].keypair])
       .accounts({
         ciAccount: IP_3.contract_account,
@@ -378,11 +390,13 @@ describe("Test", async () => {
       let tx = new anchor.web3.Transaction()
       let user = USERS[i]
       const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
+      const [cc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cc"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
       const inst_cp = await program.methods
-        .gmPay(IP_3.ipid)
+        .pay(IP_3.ipid)
         .signers([user.keypair])
         .accounts({
           cpAccount: cp_account,
+          ccAccount: cc_account,
           ciAccount: IP_3.contract_account,
           ipAccount:   IP_3.ip_account,
           userAccount: user.user_account,
@@ -406,11 +420,13 @@ describe("Test", async () => {
     let except_tx = new anchor.web3.Transaction()
     let user = USERS[IP_3.contract_data.maxcount + 1]
     const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
+    const [cc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
     const inst_cp = await program.methods
-      .gmPay(IP_3.ipid)
+      .pay(IP_3.ipid)
       .signers([user.keypair])
       .accounts({
         cpAccount: cp_account,
+        ccAccount: cc_account,
         ciAccount: IP_3.contract_account,
         ipAccount:   IP_3.ip_account,
         userAccount: user.user_account,
@@ -427,7 +443,7 @@ describe("Test", async () => {
     assert(ci_account_data_ori.withdrawalCount.eq(new BN(0)))
 
     const inst_withdraw = await program.methods
-      .gmWithraw(IP_3.ipid)
+      .withraw(IP_3.ipid)
       .signers([USERS[0].keypair])
       .accounts({
         ciAccount: IP_3.contract_account,
@@ -454,7 +470,7 @@ describe("Test", async () => {
       let tx = new anchor.web3.Transaction()
       const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
       const inst_bonus = await program.methods
-        .gmBonus(IP_3.ipid)
+        .bonus(IP_3.ipid)
         .accounts({
           ciAccount: IP_3.contract_account,
           cpAccount: cp_account,

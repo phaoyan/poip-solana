@@ -1,7 +1,7 @@
 use anchor_lang::{prelude::*, system_program};
 
 use crate::{Pay, Publish, Withdraw, CONTRACT_TYPE_FINITE_BUYOUT, IP_OWNERSHIP_PRIVATE, IP_OWNERSHIP_PUBLIC, IP_OWNERSHIP_PUBLISHED};
-use crate::general::ErrorCode;
+use crate::state::ErrorCode;
 
 pub fn publish(ctx: Context<Publish>, price: u64, goalcount: u64, _maxcount: u64, _ipid: String) -> Result<()> {
     let ip_account = &mut ctx.accounts.ip_account;

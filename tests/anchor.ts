@@ -20,6 +20,9 @@ describe("Test", async () => {
   const wallet_sk = Uint8Array.from(JSON.parse(readFileSync("/home/solana/poip-solana/tests/wallets/id.json", "utf-8")))
   const wallet = anchor.web3.Keypair.fromSecretKey(wallet_sk)
 
+  const IP_OWNERSHIP_PRIVATE = 1
+  const IP_OWNERSHIP_PUBLISHED = 2
+  const IP_OWNERSHIP_PUBLIC = 3
 
   const USER_COUNT = 21
   const USERS: {
@@ -39,7 +42,7 @@ describe("Test", async () => {
     title: "test-book",
     ipid: "123456",
     ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("123456")], program.programId)[0],
-    contract_account: PublicKey.findProgramAddressSync([Buffer.from("fbci"), Buffer.from("123456")], program.programId)[0],
+    contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), Buffer.from("123456")], program.programId)[0],
     contract_data: {
       price: 1 * LAMPORTS_PER_SOL,
       goalcount: 5
@@ -49,7 +52,7 @@ describe("Test", async () => {
     title: "test-movie",
     ipid: "114514",
     ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("114514")], program.programId)[0],
-    contract_account: PublicKey.findProgramAddressSync([Buffer.from("cbci"), Buffer.from("114514")], program.programId)[0],
+    contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), Buffer.from("114514")], program.programId)[0],
     contract_data: {
       price: 1 * LAMPORTS_PER_SOL,
       goalcount: 5,
@@ -59,11 +62,11 @@ describe("Test", async () => {
     title: "test-anime",
     ipid: "987654321",
     ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("987654321")], program.programId)[0],
-    contract_account: PublicKey.findProgramAddressSync([Buffer.from("gmci"), Buffer.from("987654321")], program.programId)[0],
+    contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), Buffer.from("987654321")], program.programId)[0],
     contract_data: {
       price: 1 * LAMPORTS_PER_SOL,
       goalcount: 5,
-      maxcount: 10
+      maxcount: 7
     }
   }
 
@@ -127,16 +130,16 @@ describe("Test", async () => {
     assert(ip_account_data.title == IP_1.title)
     assert(ip_account_data.ipid  == IP_1.ipid)
     assert(ip_account_data.owner.equals(USERS[0].user_account))
-    assert(Object.keys(ip_account_data.ownership)[0] === "private")
+    assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PRIVATE)))
 
   })
 
   it("fb-publish", async ()=>{
     const inst_fbci = await program.methods
-      .fbPublish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), IP_1.ipid)
+      .fbPublish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), new BN(0), IP_1.ipid)
       .signers([USERS[0].keypair])
       .accounts({
-        fbciAccount: IP_1.contract_account,
+        ciAccount: IP_1.contract_account,
         ipAccount: IP_1.ip_account,
         ownerAccount: USERS[0].user_account,
         signer: USERS[0].keypair.publicKey,
@@ -147,48 +150,47 @@ describe("Test", async () => {
     tx.add(inst_fbci)
     await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
 
-    let fbci_account_data = await program.account.fbciAccount.fetch(IP_1.contract_account)
+    let fbci_account_data = await program.account.ciAccount.fetch(IP_1.contract_account)
     let ip_account_data     = await program.account.ipAccount.fetch(IP_1.ip_account)
     assert(fbci_account_data.price.eq(new BN(IP_1.contract_data.price)))
     assert(fbci_account_data.goalcount.eq(new BN(IP_1.contract_data.goalcount)))
-    assert(fbci_account_data.ipAccount.equals(IP_1.ip_account))
     assert(fbci_account_data.currcount.eq(new BN(0)))
-    assert(Object.keys(ip_account_data.ownership)[0] === "published")
+    assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLISHED)))
 
   })
 
   it("fb-pay", async ()=>{
-    let fbci_lamports_ori = (await program.account.fbciAccount.getAccountInfo(IP_1.contract_account)).lamports
+    let fbci_lamports_ori = (await program.account.ciAccount.getAccountInfo(IP_1.contract_account)).lamports
     for(let i = 1; i < IP_1.contract_data.goalcount + 1; i ++) {
       let user = USERS[i]
       let tx = new anchor.web3.Transaction()
-      const [fbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("fbcp"), user.user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
+      const [fbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
       const inst_fbcp = await program.methods
         .fbPay(IP_1.ipid)
         .signers([user.keypair])
         .accounts({
-          fbcpAccount: fbcp_account,
-          fbciAccount: IP_1.contract_account,
+          cpAccount: fbcp_account,
+          ciAccount: IP_1.contract_account,
           ipAccount:   IP_1.ip_account,
           userAccount: user.user_account,
           signer:      user.keypair.publicKey,
         }).instruction()
       tx.add(inst_fbcp)
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
-      let fbcp_account_data = await program.account.fbcpAccount.fetch(fbcp_account)
-      let fbci_account_info = await program.account.fbciAccount.getAccountInfo(IP_1.contract_account)
+      let fbcp_account_data = await program.account.cpAccount.fetch(fbcp_account)
+      let fbci_account_info = await program.account.ciAccount.getAccountInfo(IP_1.contract_account)
       assert(fbci_account_info.lamports - fbci_lamports_ori === IP_1.contract_data.price * i)
       assert(!!fbcp_account_data)
     }
 
     let except_tx = new anchor.web3.Transaction()
-    const [fbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("fbcp"), USERS[4].user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
+    const [fbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), USERS[4].user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
     const inst_fbcp_after_goal_achieved = await program.methods
       .fbPay(IP_1.ipid)
       .signers([USERS[4].keypair])
       .accounts({
-        fbcpAccount: fbcp_account,
-        fbciAccount: IP_1.contract_account,
+        cpAccount: fbcp_account,
+        ciAccount: IP_1.contract_account,
         ipAccount:   IP_1.ip_account,
         userAccount: USERS[4].user_account,
         signer:      USERS[4].keypair.publicKey,
@@ -198,8 +200,8 @@ describe("Test", async () => {
   })
 
   it("fb-withdraw", async ()=>{
-    const fbci_account_data_ori = await program.account.fbciAccount.fetch(IP_1.contract_account)
-    const fbci_account_info_ori = await program.account.fbciAccount.getAccountInfo(IP_1.contract_account)
+    const fbci_account_data_ori = await program.account.ciAccount.fetch(IP_1.contract_account)
+    const fbci_account_info_ori = await program.account.ciAccount.getAccountInfo(IP_1.contract_account)
     const owner_account_info_ori = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
     assert(fbci_account_data_ori.withdrawalCount.eq(new BN(0)))
 
@@ -207,7 +209,7 @@ describe("Test", async () => {
       .fbWithdraw(IP_1.ipid)
       .signers([USERS[0].keypair])
       .accounts({
-        fbciAccount: IP_1.contract_account,
+        ciAccount: IP_1.contract_account,
         ipAccount: IP_1.ip_account,
         ownerAccount: USERS[0].user_account,
         signer: USERS[0].keypair.publicKey,
@@ -216,8 +218,8 @@ describe("Test", async () => {
     tx.add(inst_withdraw)
     await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
 
-    const fbci_account_data_mod = await program.account.fbciAccount.fetch(IP_1.contract_account)
-    const fbci_account_info_mod = await program.account.fbciAccount.getAccountInfo(IP_1.contract_account)
+    const fbci_account_data_mod = await program.account.ciAccount.fetch(IP_1.contract_account)
+    const fbci_account_info_mod = await program.account.ciAccount.getAccountInfo(IP_1.contract_account)
     const owner_account_info_mod = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
     assert(fbci_account_data_mod.withdrawalCount.eq(new BN(IP_1.contract_data.goalcount)))
     assert(fbci_account_info_ori.lamports - fbci_account_info_mod.lamports === IP_1.contract_data.goalcount * IP_1.contract_data.price)
@@ -226,10 +228,10 @@ describe("Test", async () => {
 
   it("cb-publish", async ()=>{
     const inst_dup = await program.methods
-      .cbPublish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), IP_1.ipid)
+      .cbPublish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), new BN(0), IP_1.ipid)
       .signers([USERS[0].keypair])
       .accounts({
-        cbciAccount: IP_1.contract_account,
+        ciAccount: IP_1.contract_account,
         ipAccount: IP_1.ip_account,
         ownerAccount: USERS[0].user_account,
         signer: USERS[0].keypair.publicKey,
@@ -241,10 +243,10 @@ describe("Test", async () => {
     
 
     const inst_cbci = await program.methods
-      .cbPublish(new BN(IP_2.contract_data.price), new BN(IP_2.contract_data.goalcount), IP_2.ipid)
+      .cbPublish(new BN(IP_2.contract_data.price), new BN(IP_2.contract_data.goalcount), new BN(0), IP_2.ipid)
       .signers([USERS[0].keypair])
       .accounts({
-        cbciAccount: IP_2.contract_account,
+        ciAccount: IP_2.contract_account,
         ipAccount: IP_2.ip_account,
         ownerAccount: USERS[0].user_account,
         signer: USERS[0].keypair.publicKey,
@@ -255,35 +257,34 @@ describe("Test", async () => {
     tx.add(inst_cbci)
     await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
 
-    let cbci_account_data = await program.account.cbciAccount.fetch(IP_2.contract_account)
+    let cbci_account_data = await program.account.ciAccount.fetch(IP_2.contract_account)
     let ip_account_data     = await program.account.ipAccount.fetch(IP_2.ip_account)
     assert(cbci_account_data.price.eq(new BN(IP_2.contract_data.price)))
     assert(cbci_account_data.goalcount.eq(new BN(IP_2.contract_data.goalcount)))
-    assert(cbci_account_data.ipAccount.equals(IP_2.ip_account))
     assert(cbci_account_data.currcount.eq(new BN(0)))
-    assert(Object.keys(ip_account_data.ownership)[0] === "published")
+    assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLISHED)))
   })
   
   it("cb-pay", async ()=>{
-    let cbci_lamports_ori = (await program.account.cbciAccount.getAccountInfo(IP_2.contract_account)).lamports
+    let cbci_lamports_ori = (await program.account.ciAccount.getAccountInfo(IP_2.contract_account)).lamports
     for(let i = 1; i < USER_COUNT; i ++) {
       let tx = new anchor.web3.Transaction()
       let user = USERS[i]
-      const [cbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cbcp"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
+      const [cbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
       const inst_cbcp = await program.methods
         .cbPay(IP_2.ipid)
         .signers([user.keypair])
         .accounts({
-          cbcpAccount: cbcp_account,
-          cbciAccount: IP_2.contract_account,
+          cpAccount: cbcp_account,
+          ciAccount: IP_2.contract_account,
           ipAccount:   IP_2.ip_account,
           userAccount: user.user_account,
           signer:      user.keypair.publicKey,
         }).instruction()
       tx.add(inst_cbcp)
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
-      let cbcp_account_data = await program.account.cbcpAccount.fetch(cbcp_account)
-      let cbci_lamports_mod = (await program.account.cbciAccount.getAccountInfo(IP_2.contract_account)).lamports
+      let cbcp_account_data = await program.account.cpAccount.fetch(cbcp_account)
+      let cbci_lamports_mod = (await program.account.ciAccount.getAccountInfo(IP_2.contract_account)).lamports
       console.log("CB-Contract Lamports: ", cbci_lamports_mod - cbci_lamports_ori)
       // assert(cbci_lamports_mod - cbci_lamports_ori === IP_2.contract_data.price * IP_2.contract_data.goalcount)      
       assert(!!cbcp_account_data)
@@ -292,8 +293,8 @@ describe("Test", async () => {
   })
 
   it("cb-withdraw", async ()=>{
-    const cbci_account_data_ori = await program.account.cbciAccount.fetch(IP_2.contract_account)
-    const cbci_account_info_ori = await program.account.cbciAccount.getAccountInfo(IP_2.contract_account)
+    const cbci_account_data_ori = await program.account.ciAccount.fetch(IP_2.contract_account)
+    const cbci_account_info_ori = await program.account.ciAccount.getAccountInfo(IP_2.contract_account)
     const owner_account_info_ori = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
     assert(cbci_account_data_ori.withdrawalCount.eq(new BN(0)))
 
@@ -301,7 +302,7 @@ describe("Test", async () => {
       .cbWithraw(IP_2.ipid)
       .signers([USERS[0].keypair])
       .accounts({
-        cbciAccount: IP_2.contract_account,
+        ciAccount: IP_2.contract_account,
         ipAccount: IP_2.ip_account,
         ownerAccount: USERS[0].user_account,
         signer: USERS[0].keypair.publicKey,
@@ -310,8 +311,8 @@ describe("Test", async () => {
     tx.add(inst_withdraw)
     await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
 
-    const cbci_account_data_mod = await program.account.cbciAccount.fetch(IP_2.contract_account)
-    const cbci_account_info_mod = await program.account.cbciAccount.getAccountInfo(IP_2.contract_account)
+    const cbci_account_data_mod = await program.account.ciAccount.fetch(IP_2.contract_account)
+    const cbci_account_info_mod = await program.account.ciAccount.getAccountInfo(IP_2.contract_account)
     const owner_account_info_mod = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
     assert(cbci_account_data_mod.withdrawalCount.eq(new BN(IP_2.contract_data.goalcount)))
     assert(cbci_account_info_ori.lamports - cbci_account_info_mod.lamports === IP_2.contract_data.goalcount * IP_2.contract_data.price)
@@ -323,12 +324,12 @@ describe("Test", async () => {
     for(let i = 1; i < USER_COUNT; i ++) {
       let user = USERS[i]
       let tx = new anchor.web3.Transaction()
-      const [cbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cbcp"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
+      const [cbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
       const inst_bonus = await program.methods
         .cbBonus(IP_2.ipid)
         .accounts({
-          cbciAccount: IP_2.contract_account,
-          cbcpAccount: cbcp_account,
+          ciAccount: IP_2.contract_account,
+          cpAccount: cbcp_account,
           userAccount: user.user_account,
           signer:      user.keypair.publicKey
         }).instruction()
@@ -336,11 +337,11 @@ describe("Test", async () => {
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
       const cp_withdrawal = (USER_COUNT - 1 - IP_2.contract_data.goalcount) * IP_2.contract_data.price / (USER_COUNT - 1)
       const user_account_lamp = (await program.account.userAccount.getAccountInfo(user.user_account)).lamports
-      const cp_account_data = await program.account.cbcpAccount.fetch(cbcp_account)
+      const cp_account_data = await program.account.cpAccount.fetch(cbcp_account)
       assert(cp_account_data.withdrawal.eq(new BN(cp_withdrawal)))
       console.log(`USER-${i} Lamports: `, user_account_lamp, cp_account_data.withdrawal.toNumber())
     }
-    const cbci_account_info = await program.account.cbciAccount.getAccountInfo(IP_2.contract_account)
+    const cbci_account_info = await program.account.ciAccount.getAccountInfo(IP_2.contract_account)
     const author_account_info = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
     console.log("CBCI   Lamports: ", cbci_account_info.lamports)
     console.log("Author Lamports: ", author_account_info.lamports)
@@ -362,22 +363,21 @@ describe("Test", async () => {
     tx.add(inst_ci)
     await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
 
-    let ci_account_data = await program.account.gmciAccount.fetch(IP_3.contract_account)
+    let ci_account_data = await program.account.ciAccount.fetch(IP_3.contract_account)
     let ip_account_data     = await program.account.ipAccount.fetch(IP_3.ip_account)
     assert(ci_account_data.price.eq(new BN(IP_3.contract_data.price)))
     assert(ci_account_data.goalcount.eq(new BN(IP_3.contract_data.goalcount)))
     assert(ci_account_data.maxcount .eq(new BN(IP_3.contract_data.maxcount )))
-    assert(ci_account_data.ipAccount.equals(IP_3.ip_account))
     assert(ci_account_data.currcount.eq(new BN(0)))
-    assert(Object.keys(ip_account_data.ownership)[0] === "published")
+    assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLISHED)))
   })
 
   it("gm-pay", async()=>{
-    let ci_lamports_ori = (await program.account.gmciAccount.getAccountInfo(IP_3.contract_account)).lamports
+    let ci_lamports_ori = (await program.account.ciAccount.getAccountInfo(IP_3.contract_account)).lamports
     for(let i = 1; i < IP_3.contract_data.maxcount + 1; i ++) {
       let tx = new anchor.web3.Transaction()
       let user = USERS[i]
-      const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("gmcp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
+      const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
       const inst_cp = await program.methods
         .gmPay(IP_3.ipid)
         .signers([user.keypair])
@@ -390,22 +390,22 @@ describe("Test", async () => {
         }).instruction()
       tx.add(inst_cp)
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
-      let cp_account_data = await program.account.gmcpAccount.fetch(cp_account)
-      let ci_lamports_mod = (await program.account.gmciAccount.getAccountInfo(IP_3.contract_account)).lamports
+      let cp_account_data = await program.account.cpAccount.fetch(cp_account)
+      let ci_lamports_mod = (await program.account.ciAccount.getAccountInfo(IP_3.contract_account)).lamports
       console.log("GM-Contract Lamports: ", ci_lamports_mod - ci_lamports_ori)
       // assert(cbci_lamports_mod - cbci_lamports_ori === IP_2.contract_data.price * IP_2.contract_data.goalcount)      
       assert(!!cp_account_data)
     }
     
-    let ci_account_data = await program.account.gmciAccount.fetch(IP_3.contract_account)
+    let ci_account_data = await program.account.ciAccount.fetch(IP_3.contract_account)
     let ip_account_data     = await program.account.ipAccount.fetch(IP_3.ip_account)
     assert(ci_account_data.currcount.eq(ci_account_data.maxcount))
-    assert(Object.keys(ip_account_data.ownership)[0] === "public")
+    assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLIC)))
 
     // 在IP公有化后无需再进行支付
     let except_tx = new anchor.web3.Transaction()
-    let user = USERS[11]
-    const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("gmcp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
+    let user = USERS[IP_3.contract_data.maxcount + 1]
+    const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
     const inst_cp = await program.methods
       .gmPay(IP_3.ipid)
       .signers([user.keypair])
@@ -421,8 +421,8 @@ describe("Test", async () => {
   })
 
   it("gm-withdraw", async()=>{
-    const ci_account_data_ori = await program.account.gmciAccount.fetch(IP_3.contract_account)
-    const ci_account_info_ori = await program.account.gmciAccount.getAccountInfo(IP_3.contract_account)
+    const ci_account_data_ori = await program.account.ciAccount.fetch(IP_3.contract_account)
+    const ci_account_info_ori = await program.account.ciAccount.getAccountInfo(IP_3.contract_account)
     const owner_account_info_ori = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
     assert(ci_account_data_ori.withdrawalCount.eq(new BN(0)))
 
@@ -439,8 +439,8 @@ describe("Test", async () => {
     tx.add(inst_withdraw)
     await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
 
-    const ci_account_data_mod = await program.account.gmciAccount.fetch(IP_3.contract_account)
-    const ci_account_info_mod = await program.account.gmciAccount.getAccountInfo(IP_3.contract_account)
+    const ci_account_data_mod = await program.account.ciAccount.fetch(IP_3.contract_account)
+    const ci_account_info_mod = await program.account.ciAccount.getAccountInfo(IP_3.contract_account)
     const owner_account_info_mod = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
     assert(ci_account_data_mod.withdrawalCount.eq(new BN(IP_3.contract_data.goalcount)))
     assert(ci_account_info_ori.lamports - ci_account_info_mod.lamports === IP_3.contract_data.goalcount * IP_3.contract_data.price)
@@ -452,7 +452,7 @@ describe("Test", async () => {
     for(let i = 1; i < IP_3.contract_data.maxcount + 1; i ++) {
       let user = USERS[i]
       let tx = new anchor.web3.Transaction()
-      const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("gmcp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
+      const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
       const inst_bonus = await program.methods
         .gmBonus(IP_3.ipid)
         .accounts({
@@ -465,31 +465,31 @@ describe("Test", async () => {
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
       const cp_withdrawal = (IP_3.contract_data.maxcount - IP_3.contract_data.goalcount) * IP_3.contract_data.price / IP_3.contract_data.maxcount
       const user_account_lamp = (await program.account.userAccount.getAccountInfo(user.user_account)).lamports
-      const cp_account_data = await program.account.gmcpAccount.fetch(cp_account)
+      const cp_account_data = await program.account.cpAccount.fetch(cp_account)
       assert(cp_account_data.withdrawal.eq(new BN(cp_withdrawal)))
       console.log(`USER-${i} Lamports: `, user_account_lamp, cp_account_data.withdrawal.toNumber())
     }
-    const ci_account_info = await program.account.gmciAccount.getAccountInfo(IP_3.contract_account)
+    const ci_account_info = await program.account.ciAccount.getAccountInfo(IP_3.contract_account)
     const author_account_info = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
     console.log("GMCI   Lamports: ", ci_account_info.lamports)
     console.log("Author Lamports: ", author_account_info.lamports)
   })
 
   it("delete accounts", async()=>{
-    for(let IP of [IP_1, IP_2, IP_3]) {
-      let tx = new anchor.web3.Transaction()
-      const inst_delete_ip = await program.methods
-        .deleteIpAccount(IP.ipid)
-        .signers([USERS[0].keypair])
-        .accounts({
-          ipAccount: IP.ip_account,
-          ownerAccount: USERS[0].user_account,
-          signer: USERS[0].keypair.publicKey,
-          systemProgram: SystemProgram.programId,
-        }).instruction()
-      tx.add(inst_delete_ip)
-      await anchor.web3.sendAndConfirmTransaction(connection, tx,[USERS[0].keypair])
-    }
+    // for(let IP of [IP_1, IP_2, IP_3]) {
+    //   let tx = new anchor.web3.Transaction()
+    //   const inst_delete_ip = await program.methods
+    //     .deleteIpAccount(IP.ipid)
+    //     .signers([USERS[0].keypair])
+    //     .accounts({
+    //       ipAccount: IP.ip_account,
+    //       ownerAccount: USERS[0].user_account,
+    //       signer: USERS[0].keypair.publicKey,
+    //       systemProgram: SystemProgram.programId,
+    //     }).instruction()
+    //   tx.add(inst_delete_ip)
+    //   await anchor.web3.sendAndConfirmTransaction(connection, tx,[USERS[0].keypair])
+    // }
 
     for(let user of USERS) {
       let tx = new anchor.web3.Transaction()
@@ -505,9 +505,11 @@ describe("Test", async () => {
       await anchor.web3.sendAndConfirmTransaction(connection, tx,[user.keypair])
     }
 
+    for(let user of USERS){
+      const balance = await connection.getBalance(user.keypair.publicKey)
+      console.log(`${user.username} Balance: ${balance}`)
+    }
 
-    let ip_account_data = await program.account.ipAccount.fetchNullable(IP_1.ip_account)
-    assert(!ip_account_data)
     for (let user of USERS) {
       let user_account_data = await program.account.userAccount.fetchNullable(user.user_account)
       assert(!user_account_data)

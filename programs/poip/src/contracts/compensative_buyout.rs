@@ -3,12 +3,13 @@ use anchor_lang::{prelude::*, system_program};
 use crate::{Bonus, Pay, Publish, Withdraw, CONTRACT_TYPE_COMPENSATIVE_BUYOUT, IP_OWNERSHIP_PRIVATE, IP_OWNERSHIP_PUBLISHED};
 use crate::state::ErrorCode;
 
-pub fn publish(ctx: Context<Publish>, price: u64, goalcount: u64, _maxcount: u64, _ipid: String) -> Result<()> {
+pub fn publish(ctx: Context<Publish>, _ipid: String, price: u64, goalcount: u64, _maxcount: u64) -> Result<()> {
     let ip_account = &mut ctx.accounts.ip_account;
     let ci_account= &mut ctx.accounts.ci_account;
 
     require!(ip_account.ownership.eq(&IP_OWNERSHIP_PRIVATE), ErrorCode::WrongIPOwnership);
     require!(price > 0, ErrorCode::InvalidPrice);
+    require!(goalcount > 0, ErrorCode::InvalidGoalcount);
 
     ip_account.ownership = IP_OWNERSHIP_PUBLISHED;
     ci_account.contract_type = CONTRACT_TYPE_COMPENSATIVE_BUYOUT;
@@ -27,8 +28,9 @@ pub fn pay(ctx: Context<Pay>, _ipid: String) -> Result<()> {
     let ip_account = &mut ctx.accounts.ip_account;
     // 实际付款 = price - withdrawable
     let withdrawable = 
-        if ci_account.currcount <= ci_account.goalcount { 0 } 
-        else { (ci_account.currcount - ci_account.goalcount) * ci_account.price / ci_account.currcount - cp_account.withdrawal }; 
+        if ci_account.currcount < ci_account.goalcount { 0 } 
+        else { (ci_account.currcount + 1 - ci_account.goalcount) * ci_account.price / (ci_account.currcount + 1) }; 
+
     require!(ctx.accounts.signer.get_lamports() >= ci_account.price - withdrawable, ErrorCode::LamportsNotEnough);
     require!(ip_account.ownership.eq(&IP_OWNERSHIP_PUBLISHED), ErrorCode::WrongIPOwnership);
     require!(ci_account.contract_type.eq(&CONTRACT_TYPE_COMPENSATIVE_BUYOUT), ErrorCode::WrongContractType);

@@ -15,8 +15,8 @@ declare_id!("6xSaDiBZ4R6i7Rk47zcRvuuNGeJ8NRApRfPqWksS7Xe2");
 mod poip {
     use super::*;
     
-    pub fn create_user_account(ctx: Context<CreateUserAccount>, username: String) -> Result<()> {
-        general::create_user_account(ctx, username)
+    pub fn create_user_account(ctx: Context<CreateUserAccount>) -> Result<()> {
+        general::create_user_account(ctx)
     }
 
     pub fn delete_user_account(ctx: Context<DeleteUserAccount>) -> Result<()> {
@@ -31,11 +31,11 @@ mod poip {
         general::delete_ip_account(ctx, ipid)
     }
 
-    pub  fn publish(ctx: Context<Publish>, price: u64, goalcount: u64, maxcount: u64, ipid: String, contract_type: u64) -> Result<()> {
+    pub  fn publish(ctx: Context<Publish>, ipid: String, price: u64, goalcount: u64, maxcount: u64, contract_type: u64) -> Result<()> {
         match contract_type {
-            CONTRACT_TYPE_GOALMAX_BUYOUT => goalmax_buyout::publish(ctx, price, goalcount, maxcount, ipid),
-            CONTRACT_TYPE_COMPENSATIVE_BUYOUT => compensative_buyout::publish(ctx, price, goalcount, maxcount, ipid),
-            CONTRACT_TYPE_FINITE_BUYOUT => finite_buyout::publish(ctx, price, goalcount, maxcount, ipid),
+            CONTRACT_TYPE_GOALMAX_BUYOUT => goalmax_buyout::publish(ctx, ipid, price, goalcount, maxcount),
+            CONTRACT_TYPE_COMPENSATIVE_BUYOUT => compensative_buyout::publish(ctx, ipid, price, goalcount, maxcount),
+            CONTRACT_TYPE_FINITE_BUYOUT => finite_buyout::publish(ctx, ipid, price, goalcount, maxcount),
             _ => Ok(())
         }
     }

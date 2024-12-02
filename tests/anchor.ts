@@ -1,7 +1,7 @@
 
 import * as anchor from "@coral-xyz/anchor";
 import type { Poip } from "../target/types/poip";
-import { Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from "@solana/web3.js";
+import { Keypair, LAMPORTS_PER_SOL, PublicKey, sendAndConfirmTransaction, SystemProgram } from "@solana/web3.js";
 import { readFileSync } from "fs";
 import { BN } from "bn.js";
 import assert from "assert";
@@ -28,9 +28,9 @@ describe("Test", async () => {
   const wallet_sk = Uint8Array.from(JSON.parse(readFileSync("/home/solana/poip-solana/tests/wallets/id.json", "utf-8")))
   const wallet = anchor.web3.Keypair.fromSecretKey(wallet_sk)
 
+  const INIT_LAMPORT = 5 * LAMPORTS_PER_SOL
 
-
-  const USER_COUNT = 21
+  const USER_COUNT = 20
   const USERS: {
     username: string, 
     keypair: Keypair,
@@ -38,43 +38,56 @@ describe("Test", async () => {
   }[] = []
 
   interface IP {
-    title: string,
-    ipid: string,
+    title: string
+    ipid: string
+    contract_type: number
     ip_account: PublicKey
     contract_account: PublicKey
-    contract_data: any
+    contract_data: {
+      price: number
+      goalcount: number
+      maxcount: number
+    }
   }[] = []
+
   const IP_1: IP = {
     title: "test-book",
     ipid: "123456",
+    contract_type: CONTRACT_TYPE_FINITE_BUYOUT,
     ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("123456")], program.programId)[0],
     contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), Buffer.from("123456")], program.programId)[0],
     contract_data: {
       price: 1 * LAMPORTS_PER_SOL,
-      goalcount: 5
+      goalcount: 5,
+      maxcount: USER_COUNT // 无效
     }
   }
   const IP_2: IP = {
     title: "test-movie",
     ipid: "114514",
+    contract_type: CONTRACT_TYPE_COMPENSATIVE_BUYOUT,
     ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("114514")], program.programId)[0],
     contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), Buffer.from("114514")], program.programId)[0],
     contract_data: {
       price: 1 * LAMPORTS_PER_SOL,
       goalcount: 5,
+      maxcount: USER_COUNT // 无效
     }
   }
   const IP_3: IP = {
     title: "test-anime",
     ipid: "987654321",
+    contract_type: CONTRACT_TYPE_GOALMAX_BUYOUT,
     ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("987654321")], program.programId)[0],
     contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), Buffer.from("987654321")], program.programId)[0],
     contract_data: {
       price: 1 * LAMPORTS_PER_SOL,
       goalcount: 5,
-      maxcount: 7
+      maxcount: 10
     }
   }
+
+  const IPS = [IP_1, IP_2, IP_3]
 
   it("create accounts", async ()=>{
     // 创建钱包 + 转账
@@ -82,31 +95,9 @@ describe("Test", async () => {
       let tx = new anchor.web3.Transaction()
       let keypair = anchor.web3.Keypair.generate()
       let [user_account] = PublicKey.findProgramAddressSync([Buffer.from("user"), keypair.publicKey.toBuffer()], program.programId)
-      tx.add(SystemProgram.transfer({fromPubkey: wallet.publicKey, toPubkey: keypair.publicKey, lamports: 5 * LAMPORTS_PER_SOL}))
+      tx.add(SystemProgram.transfer({fromPubkey: wallet.publicKey, toPubkey: keypair.publicKey, lamports: INIT_LAMPORT}))
       USERS.push({username: `user-${i}`, keypair: keypair, user_account: user_account})
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [wallet])
-    }
-
-
-    for (let user of USERS){
-      let balance = await connection.getBalance(user.keypair.publicKey)
-      assert(balance === 5 * LAMPORTS_PER_SOL)
-    }
-
-
-    // 创建 user_account
-    for (let user of USERS) {
-      let tx = new anchor.web3.Transaction()
-      const inst_create_user = await program.methods
-        .createUserAccount(user.username)
-        .signers([user.keypair])
-        .accounts({
-          userAccount: user.user_account,
-          signer: user.keypair.publicKey,
-          systemProgram: SystemProgram.programId,
-        }).instruction()
-      tx.add(inst_create_user)
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
     }
 
     // 创建 ip：对于user-0
@@ -117,7 +108,6 @@ describe("Test", async () => {
         .signers([USERS[0].keypair])
         .accounts({
           ipAccount: IP.ip_account,
-          ownerAccount: USERS[0].user_account,
           signer: USERS[0].keypair.publicKey,
           systemProgram: SystemProgram.programId,
         }).instruction()
@@ -125,411 +115,277 @@ describe("Test", async () => {
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
     }
 
-    // 检查user_account
-    for(let user of USERS) {
-      const user_account_data = await program.account.userAccount.fetch(user.user_account)
-      assert(user_account_data.username === user.username)
-      assert(user_account_data.useraddr.equals(user.keypair.publicKey))
-    }
-
     let ip_account_data = await program.account.ipAccount.fetch(IP_1.ip_account)
     assert(ip_account_data.title == IP_1.title)
     assert(ip_account_data.ipid  == IP_1.ipid)
-    assert(ip_account_data.owner.equals(USERS[0].user_account))
+    assert(ip_account_data.owner.equals(USERS[0].keypair.publicKey))
     assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PRIVATE)))
-
   })
 
-  it("fb-publish", async ()=>{
-    const inst_fbci = await program.methods
-      .publish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), new BN(0), IP_1.ipid, new BN(CONTRACT_TYPE_FINITE_BUYOUT))
-      .signers([USERS[0].keypair])
-      .accounts({
-        ciAccount: IP_1.contract_account,
-        ipAccount: IP_1.ip_account,
-        ownerAccount: USERS[0].user_account,
-        signer: USERS[0].keypair.publicKey,
-        systemProgram: SystemProgram.programId,
-      }).instruction()
-
-    let tx = new anchor.web3.Transaction()
-    tx.add(inst_fbci)
-    await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
-
-    let fbci_account_data = await program.account.ciAccount.fetch(IP_1.contract_account)
-    let ip_account_data     = await program.account.ipAccount.fetch(IP_1.ip_account)
-    assert(fbci_account_data.price.eq(new BN(IP_1.contract_data.price)))
-    assert(fbci_account_data.goalcount.eq(new BN(IP_1.contract_data.goalcount)))
-    assert(fbci_account_data.currcount.eq(new BN(0)))
-    assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLISHED)))
-
-  })
-
-  it("fb-pay", async ()=>{
-    let fbci_lamports_ori = (await program.account.ciAccount.getAccountInfo(IP_1.contract_account)).lamports
-    for(let i = 1; i < IP_1.contract_data.goalcount + 1; i ++) {
-      let user = USERS[i]
-      let tx = new anchor.web3.Transaction()
-      const [fbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
-      const [fbcc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cc"), user.user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
-      const inst_fbcp = await program.methods
-        .pay(IP_1.ipid)
-        .signers([user.keypair])
+  it("publish", async ()=>{
+    for(let ip of IPS) {
+      const inst_publish = await program.methods
+        .publish(
+          ip.ipid, 
+          new BN(ip.contract_data.price), 
+          new BN(ip.contract_data.goalcount), 
+          new BN(ip.contract_data.maxcount), 
+          new BN(ip.contract_type))
+        .signers([USERS[0].keypair])
         .accounts({
-          cpAccount: fbcp_account,
-          ccAccount: fbcc_account,
-          ciAccount: IP_1.contract_account,
-          ipAccount:   IP_1.ip_account,
-          userAccount: user.user_account,
-          signer:      user.keypair.publicKey,
+          ciAccount: ip.contract_account,
+          ipAccount: ip.ip_account,
+          signer: USERS[0].keypair.publicKey
         }).instruction()
-      tx.add(inst_fbcp)
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
-      let fbcp_account_data = await program.account.cpAccount.fetch(fbcp_account)
-      let fbci_account_info = await program.account.ciAccount.getAccountInfo(IP_1.contract_account)
-      assert(fbci_account_info.lamports - fbci_lamports_ori === IP_1.contract_data.price * i)
-      assert(!!fbcp_account_data)
+      await sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(inst_publish), [USERS[0].keypair])
     }
 
-    let except_tx = new anchor.web3.Transaction()
-    const [fbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), USERS[4].user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
-    const [fbcc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cc"), USERS[4].user_account.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)
-    const inst_fbcp_after_goal_achieved = await program.methods
+    // 验证同一个IP不能建立两次合约
+    const except_publish = await program.methods
+      .publish(
+        IP_1.ipid,
+        new BN(10),
+        new BN(10),
+        new BN(12),
+        new BN(CONTRACT_TYPE_COMPENSATIVE_BUYOUT))
+      .signers([USERS[0].keypair])
+      .accounts({
+        ciAccount: IP_1.contract_account,
+        ipAccount: IP_1.ip_account,
+        signer: USERS[0].keypair.publicKey
+      }).instruction()
+    await chai.expect(sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(except_publish), [USERS[0].keypair])).to.be.rejected
+  })
+
+  it("pay", async ()=>{
+    for(let IP of IPS) {
+      for(let user of USERS.slice(0,IP.contract_data.goalcount)) {
+        const cp_account = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.keypair.publicKey.toBuffer(), IP.contract_account.toBuffer()], program.programId)[0]
+        const inst_pay = await program.methods
+          .pay(IP.ipid)
+          .signers([user.keypair])
+          .accounts({
+            cpAccount: cp_account,
+            ciAccount: IP.contract_account,
+            ipAccount: IP.ip_account,
+            signer: user.keypair.publicKey
+          }).instruction()
+        await sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(inst_pay), [user.keypair])
+      }
+    }
+
+    const ip1_account_data = await program.account.ipAccount.fetch(IP_1.ip_account)
+    const ip2_account_data = await program.account.ipAccount.fetch(IP_2.ip_account)
+    const ip3_account_data = await program.account.ipAccount.fetch(IP_3.ip_account)
+    assert(ip1_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLIC)))
+    assert(ip2_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLISHED)))
+    assert(ip3_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLISHED)))
+
+    // FINITE BUYOUT 在达到goalcount后就无需付费了,IPOwnership已经为Public
+    const except_user_ip1 = USERS[IP_1.contract_data.goalcount]
+    const except_cp_account_ip1 = PublicKey.findProgramAddressSync([Buffer.from("cp"), except_user_ip1.keypair.publicKey.toBuffer(), IP_1.contract_account.toBuffer()], program.programId)[0]
+    const except_pay_ip1 = await program.methods
       .pay(IP_1.ipid)
-      .signers([USERS[4].keypair])
+      .signers([except_user_ip1.keypair])
       .accounts({
-        cpAccount: fbcp_account,
-        ccAccount: fbcc_account,
-        ciAccount: IP_1.contract_account,
-        ipAccount:   IP_1.ip_account,
-        userAccount: USERS[4].user_account,
-        signer:      USERS[4].keypair.publicKey,
-      }).instruction()
-    except_tx.add(inst_fbcp_after_goal_achieved)
-    await chai.expect(anchor.web3.sendAndConfirmTransaction(connection, except_tx, [USERS[4].keypair])).to.be.rejected
-  })
-
-  it("fb-withdraw", async ()=>{
-    const fbci_account_data_ori = await program.account.ciAccount.fetch(IP_1.contract_account)
-    const fbci_account_info_ori = await program.account.ciAccount.getAccountInfo(IP_1.contract_account)
-    const owner_account_info_ori = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
-    assert(fbci_account_data_ori.withdrawalCount.eq(new BN(0)))
-
-    const inst_withdraw = await program.methods
-      .withraw(IP_1.ipid)
-      .signers([USERS[0].keypair])
-      .accounts({
+        cpAccount: except_cp_account_ip1,
         ciAccount: IP_1.contract_account,
         ipAccount: IP_1.ip_account,
-        ownerAccount: USERS[0].user_account,
-        signer: USERS[0].keypair.publicKey,
+        signer: except_user_ip1.keypair.publicKey
       }).instruction()
-    const tx = new anchor.web3.Transaction()
-    tx.add(inst_withdraw)
-    await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
-
-    const fbci_account_data_mod = await program.account.ciAccount.fetch(IP_1.contract_account)
-    const fbci_account_info_mod = await program.account.ciAccount.getAccountInfo(IP_1.contract_account)
-    const owner_account_info_mod = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
-    assert(fbci_account_data_mod.withdrawalCount.eq(new BN(IP_1.contract_data.goalcount)))
-    assert(fbci_account_info_ori.lamports - fbci_account_info_mod.lamports === IP_1.contract_data.goalcount * IP_1.contract_data.price)
-    assert(owner_account_info_mod.lamports - owner_account_info_ori.lamports === IP_1.contract_data.goalcount * IP_1.contract_data.price)
-  })
-
-  it("cb-publish", async ()=>{
-    const inst_dup = await program.methods
-      .publish(new BN(IP_1.contract_data.price), new BN(IP_1.contract_data.goalcount), new BN(0), IP_1.ipid, new BN(CONTRACT_TYPE_COMPENSATIVE_BUYOUT))
-      .signers([USERS[0].keypair])
-      .accounts({
-        ciAccount: IP_1.contract_account,
-        ipAccount: IP_1.ip_account,
-        ownerAccount: USERS[0].user_account,
-        signer: USERS[0].keypair.publicKey,
-        systemProgram: SystemProgram.programId,
-      }).instruction()
-    let tx_dup = new anchor.web3.Transaction()
-    tx_dup.add(inst_dup)
-    await chai.expect(anchor.web3.sendAndConfirmTransaction(connection, tx_dup, [USERS[0].keypair])).to.be.rejected
-    
-
-    const inst_cbci = await program.methods
-      .publish(new BN(IP_2.contract_data.price), new BN(IP_2.contract_data.goalcount), new BN(0), IP_2.ipid, new BN(CONTRACT_TYPE_COMPENSATIVE_BUYOUT))
-      .signers([USERS[0].keypair])
-      .accounts({
-        ciAccount: IP_2.contract_account,
-        ipAccount: IP_2.ip_account,
-        ownerAccount: USERS[0].user_account,
-        signer: USERS[0].keypair.publicKey,
-        systemProgram: SystemProgram.programId,
-      }).instruction()
-
-    let tx = new anchor.web3.Transaction()
-    tx.add(inst_cbci)
-    await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
-
-    let cbci_account_data = await program.account.ciAccount.fetch(IP_2.contract_account)
-    let ip_account_data     = await program.account.ipAccount.fetch(IP_2.ip_account)
-    assert(cbci_account_data.price.eq(new BN(IP_2.contract_data.price)))
-    assert(cbci_account_data.goalcount.eq(new BN(IP_2.contract_data.goalcount)))
-    assert(cbci_account_data.currcount.eq(new BN(0)))
-    assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLISHED)))
-  })
+    await chai.expect(sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(except_pay_ip1), [except_user_ip1.keypair])).to.be.rejected
   
-  it("cb-pay", async ()=>{
-    let cbci_lamports_ori = (await program.account.ciAccount.getAccountInfo(IP_2.contract_account)).lamports
-    for(let i = 1; i < USER_COUNT; i ++) {
-      let tx = new anchor.web3.Transaction()
-      let user = USERS[i]
-      const [cbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
-      const [cbcc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cc"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
-      const inst_cbcp = await program.methods
+    // COMPENSATIVE_BUYOUT 在达到goalcount后可以继续付费，价格逐渐降低并对之前的付费者产生返利
+    let ci_account_lamports_ip2 = (await program.account.ciAccount.getAccountInfo(IP_2.contract_account)).lamports
+    let price_ip2 = IP_2.contract_data.price
+    for (let user of USERS.slice(IP_2.contract_data.goalcount, USER_COUNT)) {
+      const cp_account = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.keypair.publicKey.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)[0]
+      const inst_pay = await program.methods
         .pay(IP_2.ipid)
         .signers([user.keypair])
         .accounts({
-          cpAccount: cbcp_account,
-          ccAccount: cbcc_account,
+          cpAccount: cp_account,
           ciAccount: IP_2.contract_account,
-          ipAccount:   IP_2.ip_account,
-          userAccount: user.user_account,
-          signer:      user.keypair.publicKey,
+          ipAccount: IP_2.ip_account,
+          signer: user.keypair.publicKey
         }).instruction()
-      tx.add(inst_cbcp)
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
-      let cbcp_account_data = await program.account.cpAccount.fetch(cbcp_account)
-      let cbci_lamports_mod = (await program.account.ciAccount.getAccountInfo(IP_2.contract_account)).lamports
-      console.log("CB-Contract Lamports: ", cbci_lamports_mod - cbci_lamports_ori)
-      // assert(cbci_lamports_mod - cbci_lamports_ori === IP_2.contract_data.price * IP_2.contract_data.goalcount)      
-      assert(!!cbcp_account_data)
+      await sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(inst_pay), [user.keypair])
+
+      let curr_ci_account_lamports = (await program.account.ciAccount.getAccountInfo(IP_2.contract_account)).lamports
+      let curr_price = curr_ci_account_lamports - ci_account_lamports_ip2
+      assert(curr_price < price_ip2)
+      ci_account_lamports_ip2 = curr_ci_account_lamports
+      price_ip2 = curr_price
     }
 
-  })
-
-  it("cb-withdraw", async ()=>{
-    const cbci_account_data_ori = await program.account.ciAccount.fetch(IP_2.contract_account)
-    const cbci_account_info_ori = await program.account.ciAccount.getAccountInfo(IP_2.contract_account)
-    const owner_account_info_ori = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
-    assert(cbci_account_data_ori.withdrawalCount.eq(new BN(0)))
-
-    const inst_withdraw = await program.methods
-      .withraw(IP_2.ipid)
-      .signers([USERS[0].keypair])
-      .accounts({
-        ciAccount: IP_2.contract_account,
-        ipAccount: IP_2.ip_account,
-        ownerAccount: USERS[0].user_account,
-        signer: USERS[0].keypair.publicKey,
-      }).instruction()
-    const tx = new anchor.web3.Transaction()
-    tx.add(inst_withdraw)
-    await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
-
-    const cbci_account_data_mod = await program.account.ciAccount.fetch(IP_2.contract_account)
-    const cbci_account_info_mod = await program.account.ciAccount.getAccountInfo(IP_2.contract_account)
-    const owner_account_info_mod = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
-    assert(cbci_account_data_mod.withdrawalCount.eq(new BN(IP_2.contract_data.goalcount)))
-    assert(cbci_account_info_ori.lamports - cbci_account_info_mod.lamports === IP_2.contract_data.goalcount * IP_2.contract_data.price)
-    assert(owner_account_info_mod.lamports - owner_account_info_ori.lamports === IP_2.contract_data.goalcount * IP_2.contract_data.price)
- 
-  })
-
-  it("cb-bonus", async ()=>{
-    for(let i = 1; i < USER_COUNT; i ++) {
-      let user = USERS[i]
-      let tx = new anchor.web3.Transaction()
-      const [cbcp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)
-      const inst_bonus = await program.methods
-        .bonus(IP_2.ipid)
-        .accounts({
-          ciAccount: IP_2.contract_account,
-          cpAccount: cbcp_account,
-          userAccount: user.user_account,
-          signer:      user.keypair.publicKey
-        }).instruction()
-      tx.add(inst_bonus)
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
-      const cp_withdrawal = (USER_COUNT - 1 - IP_2.contract_data.goalcount) * IP_2.contract_data.price / (USER_COUNT - 1)
-      const user_account_lamp = (await program.account.userAccount.getAccountInfo(user.user_account)).lamports
-      const cp_account_data = await program.account.cpAccount.fetch(cbcp_account)
-      assert(cp_account_data.withdrawal.eq(new BN(cp_withdrawal)))
-      console.log(`USER-${i} Lamports: `, user_account_lamp, cp_account_data.withdrawal.toNumber())
-    }
-    const cbci_account_info = await program.account.ciAccount.getAccountInfo(IP_2.contract_account)
-    const author_account_info = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
-    console.log("CBCI   Lamports: ", cbci_account_info.lamports)
-    console.log("Author Lamports: ", author_account_info.lamports)
-  })
-
-  it("gm-publish", async()=>{
-    const inst_ci = await program.methods
-      .publish(new BN(IP_3.contract_data.price), new BN(IP_3.contract_data.goalcount), new BN(IP_3.contract_data.maxcount), IP_3.ipid, new BN(CONTRACT_TYPE_GOALMAX_BUYOUT))
-      .signers([USERS[0].keypair])
-      .accounts({
-        ciAccount: IP_3.contract_account,
-        ipAccount: IP_3.ip_account,
-        ownerAccount: USERS[0].user_account,
-        signer: USERS[0].keypair.publicKey,
-        systemProgram: SystemProgram.programId,
-      }).instruction()
-
-    let tx = new anchor.web3.Transaction()
-    tx.add(inst_ci)
-    await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
-
-    let ci_account_data = await program.account.ciAccount.fetch(IP_3.contract_account)
-    let ip_account_data     = await program.account.ipAccount.fetch(IP_3.ip_account)
-    assert(ci_account_data.price.eq(new BN(IP_3.contract_data.price)))
-    assert(ci_account_data.goalcount.eq(new BN(IP_3.contract_data.goalcount)))
-    assert(ci_account_data.maxcount .eq(new BN(IP_3.contract_data.maxcount )))
-    assert(ci_account_data.currcount.eq(new BN(0)))
-    assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLISHED)))
-  })
-
-  it("gm-pay", async()=>{
-    let ci_lamports_ori = (await program.account.ciAccount.getAccountInfo(IP_3.contract_account)).lamports
-    for(let i = 1; i < IP_3.contract_data.maxcount + 1; i ++) {
-      let tx = new anchor.web3.Transaction()
-      let user = USERS[i]
-      const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
-      const [cc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cc"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
-      const inst_cp = await program.methods
+    // GOALMAX_BUYOUT 在goalcount与maxcount之间可以继续付费，价格逐渐降低；在超过maxcount后不能继续付费，IPOwnership变为Public
+    let ci_account_lamports_ip3 = (await program.account.ciAccount.getAccountInfo(IP_3.contract_account)).lamports
+    let price_ip3 = IP_3.contract_data.price
+    for (let user of USERS.slice(IP_3.contract_data.goalcount, IP_3.contract_data.maxcount)) {
+      const cp_account = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.keypair.publicKey.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)[0]
+      const inst_pay = await program.methods
         .pay(IP_3.ipid)
         .signers([user.keypair])
         .accounts({
           cpAccount: cp_account,
-          ccAccount: cc_account,
           ciAccount: IP_3.contract_account,
-          ipAccount:   IP_3.ip_account,
-          userAccount: user.user_account,
-          signer:      user.keypair.publicKey,
+          ipAccount: IP_3.ip_account,
+          signer: user.keypair.publicKey
         }).instruction()
-      tx.add(inst_cp)
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
-      let cp_account_data = await program.account.cpAccount.fetch(cp_account)
-      let ci_lamports_mod = (await program.account.ciAccount.getAccountInfo(IP_3.contract_account)).lamports
-      console.log("GM-Contract Lamports: ", ci_lamports_mod - ci_lamports_ori)
-      // assert(cbci_lamports_mod - cbci_lamports_ori === IP_2.contract_data.price * IP_2.contract_data.goalcount)      
-      assert(!!cp_account_data)
+      await sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(inst_pay), [user.keypair])
+
+      let curr_ci_account_lamports = (await program.account.ciAccount.getAccountInfo(IP_3.contract_account)).lamports
+      let curr_price = curr_ci_account_lamports - ci_account_lamports_ip3
+      assert(curr_price < price_ip3)
+      ci_account_lamports_ip3 = curr_ci_account_lamports
+      price_ip3 = curr_price
     }
-    
-    let ci_account_data = await program.account.ciAccount.fetch(IP_3.contract_account)
-    let ip_account_data     = await program.account.ipAccount.fetch(IP_3.ip_account)
-    assert(ci_account_data.currcount.eq(ci_account_data.maxcount))
-    assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PUBLIC)))
 
-    // 在IP公有化后无需再进行支付
-    let except_tx = new anchor.web3.Transaction()
-    let user = USERS[IP_3.contract_data.maxcount + 1]
-    const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
-    const [cc_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
-    const inst_cp = await program.methods
+    const ip3_account_data_curr = await program.account.ipAccount.fetch(IP_3.ip_account)
+    assert(ip3_account_data_curr.ownership.eq(new BN(IP_OWNERSHIP_PUBLIC)))
+
+    const except_user_ip3 = USERS[IP_3.contract_data.maxcount]
+    const except_cp_account = PublicKey.findProgramAddressSync([Buffer.from("cp"), except_user_ip3.keypair.publicKey.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)[0]
+    const except_pay_ip3 = await program.methods
       .pay(IP_3.ipid)
-      .signers([user.keypair])
+      .signers([except_user_ip3.keypair])
       .accounts({
-        cpAccount: cp_account,
-        ccAccount: cc_account,
-        ciAccount: IP_3.contract_account,
-        ipAccount:   IP_3.ip_account,
-        userAccount: user.user_account,
-        signer:      user.keypair.publicKey,
-      }).instruction()
-    except_tx.add(inst_cp)
-    await chai.expect(anchor.web3.sendAndConfirmTransaction(connection, except_tx, [USERS[0].keypair])).to.be.rejected
-  })
-
-  it("gm-withdraw", async()=>{
-    const ci_account_data_ori = await program.account.ciAccount.fetch(IP_3.contract_account)
-    const ci_account_info_ori = await program.account.ciAccount.getAccountInfo(IP_3.contract_account)
-    const owner_account_info_ori = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
-    assert(ci_account_data_ori.withdrawalCount.eq(new BN(0)))
-
-    const inst_withdraw = await program.methods
-      .withraw(IP_3.ipid)
-      .signers([USERS[0].keypair])
-      .accounts({
+        cpAccount: except_cp_account,
         ciAccount: IP_3.contract_account,
         ipAccount: IP_3.ip_account,
-        ownerAccount: USERS[0].user_account,
-        signer: USERS[0].keypair.publicKey,
+        signer: except_user_ip3.keypair.publicKey
       }).instruction()
-    const tx = new anchor.web3.Transaction()
-    tx.add(inst_withdraw)
-    await anchor.web3.sendAndConfirmTransaction(connection, tx, [USERS[0].keypair])
-
-    const ci_account_data_mod = await program.account.ciAccount.fetch(IP_3.contract_account)
-    const ci_account_info_mod = await program.account.ciAccount.getAccountInfo(IP_3.contract_account)
-    const owner_account_info_mod = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
-    assert(ci_account_data_mod.withdrawalCount.eq(new BN(IP_3.contract_data.goalcount)))
-    assert(ci_account_info_ori.lamports - ci_account_info_mod.lamports === IP_3.contract_data.goalcount * IP_3.contract_data.price)
-    assert(owner_account_info_mod.lamports - owner_account_info_ori.lamports === IP_3.contract_data.goalcount * IP_3.contract_data.price)
+    await chai.expect(sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(except_pay_ip3), [except_user_ip3.keypair])).to.be.rejected
+    
 
   })
 
-  it("gm-bonus", async()=>{
-    for(let i = 1; i < IP_3.contract_data.maxcount + 1; i ++) {
-      let user = USERS[i]
-      let tx = new anchor.web3.Transaction()
-      const [cp_account]   = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.user_account.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)
+  it("withdraw", async ()=>{
+    for(let IP of IPS) {
+      const inst_withdraw = await program.methods
+        .withraw(IP.ipid)
+        .signers([USERS[0].keypair])
+        .accounts({
+          ciAccount: IP.contract_account,
+          ipAccount: IP.ip_account,
+          ownerAccount: USERS[0].user_account,
+          signer: USERS[0].keypair.publicKey
+        }).instruction()
+      await sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(inst_withdraw), [USERS[0].keypair])
+    }
+    const user_account_rent = await connection.getMinimumBalanceForRentExemption(program.account.userAccount.size)
+    const user_account_lamports = (await program.account.userAccount.getAccountInfo(USERS[0].user_account)).lamports
+    const user_profit = user_account_lamports - user_account_rent
+    assert(
+      user_profit === 
+      IP_1.contract_data.goalcount * IP_1.contract_data.price + 
+      IP_2.contract_data.goalcount * IP_2.contract_data.price + 
+      IP_3.contract_data.goalcount * IP_3.contract_data.price)
+  })
+
+  it("bonus", async ()=>{
+
+    // COMPENSATIVE BUYOUT 所有用户都购买了，所有用户都有返利（最后一个用户的返利账面为0，体现在了他购买时是最低价格）
+    for(let user of USERS.slice(0, USERS.length-1)) {
+      const cp_account = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.keypair.publicKey.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)[0]
+      const inst_bonus = await program.methods
+        .bonus(IP_2.ipid)
+        .signers([user.keypair])
+        .accounts({
+          ciAccount: IP_2.contract_account,
+          cpAccount: cp_account,
+          userAccount: user.user_account,
+          signer: user.keypair.publicKey
+        }).instruction()
+      await sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(inst_bonus), [user.keypair])
+    }
+
+    // 最后一个用户提取返利会失败
+    const except_user_ip2 = USERS[USERS.length - 1]
+    const except_cp_account_ip2 = PublicKey.findProgramAddressSync([Buffer.from("cp"), except_user_ip2.keypair.publicKey.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)[0]
+    const except_bonus_ip2 = await program.methods
+      .bonus(IP_2.ipid)
+      .signers([except_user_ip2.keypair])
+      .accounts({
+        ciAccount: IP_2.contract_account,
+        cpAccount: except_cp_account_ip2,
+        userAccount: except_user_ip2.user_account,
+        signer: except_user_ip2.keypair.publicKey
+      }).instruction()
+    await chai.expect(sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(except_bonus_ip2), [except_user_ip2.keypair])).to.be.rejected
+    
+    // cp_account 中的withdrawal应当都为最大值且相等
+    const expected_bonus_ip2 = new BN((USER_COUNT - IP_2.contract_data.goalcount)).mul(new BN(IP_2.contract_data.price)).div(new BN(USER_COUNT))
+    for(let user of USERS) {
+      const cp_account = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.keypair.publicKey.toBuffer(), IP_2.contract_account.toBuffer()], program.programId)[0]
+      const cp_account_data = await program.account.cpAccount.fetch(cp_account)
+      assert(cp_account_data.withdrawal.eq(expected_bonus_ip2))
+    }
+
+    // GOALMAX BUYOUT maxcount的用户购买了，他们都能获得返利（最后一个用户的返利账面为0，体现在了他购买时是最低价格）
+    for(let user of USERS.slice(0, IP_3.contract_data.maxcount - 1)) {
+      const cp_account = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.keypair.publicKey.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)[0]
       const inst_bonus = await program.methods
         .bonus(IP_3.ipid)
+        .signers([user.keypair])
         .accounts({
           ciAccount: IP_3.contract_account,
           cpAccount: cp_account,
           userAccount: user.user_account,
-          signer:      user.keypair.publicKey
+          signer: user.keypair.publicKey
         }).instruction()
-      tx.add(inst_bonus)
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [user.keypair])
-      const cp_withdrawal = (IP_3.contract_data.maxcount - IP_3.contract_data.goalcount) * IP_3.contract_data.price / IP_3.contract_data.maxcount
-      const user_account_lamp = (await program.account.userAccount.getAccountInfo(user.user_account)).lamports
-      const cp_account_data = await program.account.cpAccount.fetch(cp_account)
-      assert(cp_account_data.withdrawal.eq(new BN(cp_withdrawal)))
-      console.log(`USER-${i} Lamports: `, user_account_lamp, cp_account_data.withdrawal.toNumber())
+      await sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(inst_bonus), [user.keypair])
     }
-    const ci_account_info = await program.account.ciAccount.getAccountInfo(IP_3.contract_account)
-    const author_account_info = await program.account.userAccount.getAccountInfo(USERS[0].user_account)
-    console.log("GMCI   Lamports: ", ci_account_info.lamports)
-    console.log("Author Lamports: ", author_account_info.lamports)
+
+    // 最后一个用户提取返利会失败
+    const except_user_ip3 = USERS[IP_3.contract_data.maxcount - 1]
+    const except_cp_account_ip3 = PublicKey.findProgramAddressSync([Buffer.from("cp"), except_user_ip3.keypair.publicKey.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)[0]
+    const except_bonus_ip3 = await program.methods
+      .bonus(IP_3.ipid)
+      .signers([except_user_ip3.keypair])
+      .accounts({
+        ciAccount: IP_3.contract_account,
+        cpAccount: except_cp_account_ip3,
+        userAccount: except_user_ip3.user_account,
+        signer: except_user_ip3.keypair.publicKey
+      }).instruction()
+    await chai.expect(sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(except_bonus_ip3), [except_user_ip3.keypair])).to.be.rejected
+
+    // cp_account 中的withdrawal应当都为最大值且相等
+    const expected_bonus_ip3 = new BN((IP_3.contract_data.maxcount - IP_3.contract_data.goalcount)).mul(new BN(IP_3.contract_data.price)).div(new BN(IP_3.contract_data.maxcount))
+    for(let user of USERS.slice(0, IP_3.contract_data.maxcount)) {
+      const cp_account = PublicKey.findProgramAddressSync([Buffer.from("cp"), user.keypair.publicKey.toBuffer(), IP_3.contract_account.toBuffer()], program.programId)[0]
+      const cp_account_data = await program.account.cpAccount.fetch(cp_account)
+      assert(cp_account_data.withdrawal.eq(expected_bonus_ip3))
+    }
+
   })
 
-  it("delete accounts", async()=>{
-    // for(let IP of [IP_1, IP_2, IP_3]) {
-    //   let tx = new anchor.web3.Transaction()
-    //   const inst_delete_ip = await program.methods
-    //     .deleteIpAccount(IP.ipid)
-    //     .signers([USERS[0].keypair])
-    //     .accounts({
-    //       ipAccount: IP.ip_account,
-    //       ownerAccount: USERS[0].user_account,
-    //       signer: USERS[0].keypair.publicKey,
-    //       systemProgram: SystemProgram.programId,
-    //     }).instruction()
-    //   tx.add(inst_delete_ip)
-    //   await anchor.web3.sendAndConfirmTransaction(connection, tx,[USERS[0].keypair])
-    // }
-
-    for(let user of USERS) {
-      let tx = new anchor.web3.Transaction()
-      const inst_delete_user = await program.methods
+  it("delete-account", async ()=>{
+    // 最后一个用户由于没有进行withdraw或bonus操作，所以user_account并没有创建
+    for(let i = 0; i < USER_COUNT - 1; i ++) {
+      let user = USERS[i]
+      const inst_delete = await program.methods
         .deleteUserAccount()
         .signers([user.keypair])
         .accounts({
           userAccount: user.user_account,
           signer: user.keypair.publicKey,
-          systemProgram: SystemProgram.programId,
         }).instruction()
-        tx.add(inst_delete_user)
-      await anchor.web3.sendAndConfirmTransaction(connection, tx,[user.keypair])
+      await sendAndConfirmTransaction(connection, new anchor.web3.Transaction().add(inst_delete), [user.keypair])
+      const lamports = await connection.getBalance(user.keypair.publicKey)
+      const ip_rent  = await connection.getMinimumBalanceForRentExemption(program.account.ipAccount.size)
+      const ci_rent  = await connection.getMinimumBalanceForRentExemption(program.account.ciAccount.size)
+      const cp_rent  = await connection.getMinimumBalanceForRentExemption(program.account.cpAccount.size)
+      const cp_rent_count = 
+        (i < IP_1.contract_data.goalcount ? 1 : 0) +
+        (i < USER_COUNT ? 1 : 0) +
+        (i < IP_3.contract_data.maxcount ? 1 : 0)
+      const lamports_plus_rent = lamports + cp_rent * cp_rent_count + (i === 0 ? IPS.length * (ip_rent + ci_rent) : 0)
+      const sol_delta = ((lamports_plus_rent - INIT_LAMPORT) / LAMPORTS_PER_SOL).toFixed(2)
+      console.log(`${user.username} sol delta: ${sol_delta}`)
     }
 
-    for(let user of USERS){
-      const balance = await connection.getBalance(user.keypair.publicKey)
-      console.log(`${user.username} Balance: ${balance}`)
-    }
-
-    for (let user of USERS) {
-      let user_account_data = await program.account.userAccount.fetchNullable(user.user_account)
-      assert(!user_account_data)
-    }
   })
 
 }); 

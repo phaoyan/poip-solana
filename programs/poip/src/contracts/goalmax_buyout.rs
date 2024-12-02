@@ -3,12 +3,14 @@ use anchor_lang::{prelude::*, system_program};
 use crate::{Bonus, Pay, Publish, Withdraw, CONTRACT_TYPE_GOALMAX_BUYOUT, IP_OWNERSHIP_PRIVATE, IP_OWNERSHIP_PUBLIC, IP_OWNERSHIP_PUBLISHED};
 use crate::state::ErrorCode;
 
-pub fn publish(ctx: Context<Publish>, price: u64, goalcount: u64, maxcount: u64, _ipid: String) -> Result<()> {
+pub fn publish(ctx: Context<Publish>, _ipid: String, price: u64, goalcount: u64, maxcount: u64) -> Result<()> {
     let ip_account = &mut ctx.accounts.ip_account;
     let ci_account = &mut ctx.accounts.ci_account;
 
     require!(ip_account.ownership.eq(&IP_OWNERSHIP_PRIVATE), ErrorCode::WrongIPOwnership);
     require!(price > 0, ErrorCode::InvalidPrice);
+    require!(goalcount > 0, ErrorCode::InvalidGoalcount);
+    require!(maxcount > goalcount, ErrorCode::InvalidMaxcount);
 
     ip_account.ownership = IP_OWNERSHIP_PUBLISHED;
     ci_account.contract_type = CONTRACT_TYPE_GOALMAX_BUYOUT;
@@ -25,10 +27,11 @@ pub fn pay(ctx: Context<Pay>, _ipid: String) -> Result<()> {
     let ip_account   = &mut ctx.accounts.ip_account;
     let ci_account = &mut ctx.accounts.ci_account;
     let cp_account = &mut ctx.accounts.cp_account;
-        // 实际付款 = price - withdrawable
-        let withdrawable = 
-        if ci_account.currcount <= ci_account.goalcount { 0 } 
-        else { (ci_account.currcount - ci_account.goalcount) * ci_account.price / ci_account.currcount - cp_account.withdrawal }; 
+
+    // 实际付款 = price - withdrawable
+    let withdrawable = 
+        if ci_account.currcount < ci_account.goalcount { 0 } 
+        else { (ci_account.currcount + 1 - ci_account.goalcount) * ci_account.price / (ci_account.currcount + 1) }; 
     
     require!(ci_account.contract_type.eq(&CONTRACT_TYPE_GOALMAX_BUYOUT), ErrorCode::WrongContractType);
     require!(ip_account.ownership.eq(&IP_OWNERSHIP_PUBLISHED), ErrorCode::WrongIPOwnership);
@@ -83,8 +86,3 @@ pub fn bonus(ctx: Context<Bonus>, _ipid: String) -> Result<()> {
 
     Ok(())
 }
-
-
-
-
-

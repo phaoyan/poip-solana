@@ -3,12 +3,13 @@ use anchor_lang::{prelude::*, system_program};
 use crate::{Pay, Publish, Withdraw, CONTRACT_TYPE_FINITE_BUYOUT, IP_OWNERSHIP_PRIVATE, IP_OWNERSHIP_PUBLIC, IP_OWNERSHIP_PUBLISHED};
 use crate::state::ErrorCode;
 
-pub fn publish(ctx: Context<Publish>, price: u64, goalcount: u64, _maxcount: u64, _ipid: String) -> Result<()> {
+pub fn publish(ctx: Context<Publish>, _ipid: String, price: u64, goalcount: u64, _maxcount: u64) -> Result<()> {
     let ip_account = &mut ctx.accounts.ip_account;
     let ci_account= &mut ctx.accounts.ci_account;
 
     require!(ip_account.ownership.eq(&IP_OWNERSHIP_PRIVATE), ErrorCode::WrongIPOwnership);
     require!(price > 0, ErrorCode::InvalidPrice);
+    require!(goalcount > 0, ErrorCode::InvalidGoalcount);
 
     ip_account.ownership = IP_OWNERSHIP_PUBLISHED;
     ci_account.contract_type = CONTRACT_TYPE_FINITE_BUYOUT;

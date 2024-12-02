@@ -1,10 +1,5 @@
 use anchor_lang::prelude::*;
 
-
-
-
-
-
 pub const IP_OWNERSHIP_PRIVATE: u64 = 1;
 pub const IP_OWNERSHIP_PUBLISHED: u64 = 2;
 pub const IP_OWNERSHIP_PUBLIC: u64 = 3;
@@ -19,9 +14,9 @@ pub struct IPAccount {
 
 
 #[account]
-pub struct UserAccount {
-    pub username: String,
-    pub useraddr: Pubkey,
+#[derive(InitSpace)]
+pub struct UserAccount { // 用于存储临时的Lamports，通过 close 这个账户提现
+    // user_addr: 在seed中
 }
 
 pub const CONTRACT_TYPE_FINITE_BUYOUT: u64 = 1;
@@ -46,18 +41,10 @@ pub struct CPAccount { // Contract Payment Account
     pub withdrawal: u64,
 }
 
-#[account]
-#[derive(InitSpace)]
-pub struct CCAccount { // Contract Credit Account : 证明买过这个IP
-    // ip_account: 在seed中
-    // user: 在seed中
-}
-
 #[derive(Accounts)]
-#[instruction(username: String)]
 pub struct CreateUserAccount<'info> {
     #[account(
-        init, payer = signer, space = 8 + 4 + username.len() + 32,
+        init, payer = signer, space = 8 + UserAccount::INIT_SPACE,
         seeds = [b"user", signer.key().as_ref()], bump
     )]
     pub user_account: Account<'info, UserAccount>,
@@ -73,8 +60,10 @@ pub struct  DeleteUserAccount<'info> {
         seeds = [b"user", signer.key().as_ref()], bump
     )]
     pub user_account: Account<'info, UserAccount>,
+
     #[account(mut)]
     pub signer: Signer<'info>,
+
     pub system_program: Program<'info, System>
 }
 
@@ -86,10 +75,10 @@ pub struct CreateIPAccount<'info> {
         seeds = [b"ip", ipid.as_bytes().as_ref()], bump
     )]
     pub ip_account: Account<'info, IPAccount>,
-    #[account(seeds=[b"user", signer.key().as_ref()], bump)]
-    pub owner_account: Account<'info, UserAccount>,
+
     #[account(mut)]
     pub signer: Signer<'info>,
+
     pub system_program: Program<'info, System>
 }
 
@@ -101,16 +90,15 @@ pub struct DeleteIPAccount<'info> {
         seeds = [b"ip", ipid.as_bytes().as_ref()], bump
     )]
     pub ip_account: Account<'info, IPAccount>,
-    #[account(
-        seeds = [b"user", signer.key().as_ref()], bump
-    )]
-    pub owner_account: Account<'info, UserAccount>,
+    
+    #[account(mut)]
     pub signer: Signer<'info>,
+    
     pub system_program: Program<'info, System>
 }
 
 #[derive(Accounts)]
-#[instruction(price: u64, goalcount: u64, maxcount: u64, ipid: String)]
+#[instruction(ipid: String)]
 pub struct Publish<'info> {
     #[account(
         init, payer = signer, space = 8 + CIAccount::INIT_SPACE,
@@ -120,11 +108,8 @@ pub struct Publish<'info> {
     
     #[account(mut, seeds = [b"ip", ipid.as_bytes().as_ref()], bump)]
     pub ip_account: Account<'info, IPAccount>,
-    
-    #[account(mut, constraint = ip_account.owner.eq(&owner_account.key()))]
-    pub owner_account: Account<'info, UserAccount>,
 
-    #[account(mut, constraint = signer.key().eq(&owner_account.useraddr))]
+    #[account(mut, constraint = signer.key().eq(&ip_account.owner))]
     pub signer: Signer<'info>,
 
     pub system_program: Program<'info, System>
@@ -135,14 +120,8 @@ pub struct Publish<'info> {
 #[instruction(ipid: String)]
 pub struct  Pay<'info> {
     #[account(
-        init, payer = signer, space = 8 + CCAccount::INIT_SPACE,
-        seeds = [b"cc", user_account.key().as_ref(), ci_account.key().as_ref()], bump
-    )]
-    pub cc_account: Account<'info, CCAccount>,
-    
-    #[account(
         init, payer = signer, space = 8 + CPAccount::INIT_SPACE,
-        seeds = [b"cp", user_account.key().as_ref(), ci_account.key().as_ref()], bump
+        seeds = [b"cp", signer.key().as_ref(), ci_account.key().as_ref()], bump
     )]
     pub cp_account: Account<'info, CPAccount>,
 
@@ -151,9 +130,6 @@ pub struct  Pay<'info> {
 
     #[account(mut, seeds = [b"ip", ipid.as_bytes().as_ref()], bump)]
     pub ip_account: Account<'info, IPAccount>,
-
-    #[account(seeds = [b"user", signer.key().as_ref()], bump)]
-    pub user_account: Account<'info, UserAccount>,
 
     #[account(mut)]
     pub signer: Signer<'info>,
@@ -171,10 +147,13 @@ pub struct Withdraw<'info> {
     #[account(mut, seeds = [b"ip", ipid.as_bytes().as_ref()], bump)]
     pub ip_account: Account<'info, IPAccount>,
 
-    #[account(mut, constraint = ip_account.owner.eq(&owner_account.key()))]
+    #[account(
+        init_if_needed, payer = signer, space = 8 + UserAccount::INIT_SPACE, 
+        seeds = [b"user", signer.key().as_ref()], bump
+    )]
     pub owner_account: Account<'info, UserAccount>,
 
-    #[account(mut, constraint = signer.key().eq(&owner_account.useraddr))]
+    #[account(mut, constraint = signer.key().eq(&ip_account.owner))]
     pub signer: Signer<'info>,
 
     pub system_program: Program<'info, System>
@@ -186,10 +165,13 @@ pub struct  Bonus<'info> {
     #[account(mut, seeds = [b"ci", ipid.as_bytes().as_ref()], bump)]
     pub ci_account: Account<'info, CIAccount>,
 
-    #[account(mut, seeds = [b"cp", user_account.key().as_ref(), ci_account.key().as_ref()], bump)]
+    #[account(mut, seeds = [b"cp", signer.key().as_ref(), ci_account.key().as_ref()], bump)]
     pub cp_account: Account<'info, CPAccount>,
 
-    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)]
+    #[account(
+        init_if_needed, payer = signer, space = 8 + UserAccount::INIT_SPACE, 
+        seeds = [b"user", signer.key().as_ref()], bump
+    )]
     pub user_account: Account<'info, UserAccount>,
 
     #[account(mut)]
@@ -201,10 +183,13 @@ pub struct  Bonus<'info> {
 
 #[error_code]
 pub enum ErrorCode {
-    InvalidPrice,
     LamportsNotEnough,
     GoalAlreadyAchieved,
     ContractHasNoLamports,
     WrongIPOwnership,
     WrongContractType,
+    MathFailure,
+    InvalidPrice,
+    InvalidGoalcount,
+    InvalidMaxcount,
 }

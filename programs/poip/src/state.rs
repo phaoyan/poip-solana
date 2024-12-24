@@ -6,8 +6,9 @@ pub const IP_OWNERSHIP_PUBLIC: u64 = 3;
 
 #[account]
 pub struct IPAccount {
-    pub ipid: String,
-    pub link: String, // IPFS Link, 包括了一个公开的介绍信息文件和一个对称加密的IP内容文件
+    pub ipid: Pubkey,  //32字节随机ID
+    pub link: String,  //IPFS Link, 包括了对称加密的IP内容文件
+    pub intro: String, //IPFS Link, 用于存放介绍信息，为JSON
     pub owner: Pubkey,
     pub ownership: u64, // 见 IP_OWNERSHIP
 }
@@ -16,19 +17,14 @@ pub struct IPAccount {
 #[account]
 #[derive(InitSpace)]
 pub struct UserAccount { // 用于存储临时的Lamports，通过 close 这个账户提现
-    // user_addr: 在seed中
+    pub user_addr: Pubkey
 }
-
-pub const CONTRACT_TYPE_FINITE_BUYOUT: u64 = 1;
-pub const CONTRACT_TYPE_COMPENSATIVE_BUYOUT: u64 = 2;
-pub const CONTRACT_TYPE_GOALMAX_BUYOUT: u64 = 3;
 
 #[account]
 #[derive(InitSpace)]
 pub struct CIAccount { // Contract Issue Account
-    // ip_account: 由于ipid已知故不需要存
+    pub ip_account: Pubkey,
     pub price: u64,
-    pub contract_type: u64, // 见 CONTRACT_TYPE
     pub goalcount: u64,
     pub currcount: u64,
     pub maxcount:  u64,
@@ -38,6 +34,7 @@ pub struct CIAccount { // Contract Issue Account
 #[account]
 #[derive(InitSpace)]
 pub struct CPAccount { // Contract Payment Account
+    pub ip_account: Pubkey,
     pub withdrawal: u64,
 }
 
@@ -68,11 +65,11 @@ pub struct  DeleteUserAccount<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(ipid: String, title: String)]
+#[instruction(ipid: Pubkey, link: String, intro: String)]
 pub struct CreateIPAccount<'info> {
     #[account(
-        init, payer = signer, space = 8 + 4 + ipid.len() + 4 + title.len() + 32 + 8,
-        seeds = [b"ip", ipid.as_bytes().as_ref()], bump
+        init, payer = signer, space = 8 + 32 + 4 + link.len() + 4 + intro.len() + 32 + 8,
+        seeds = [b"ip", ipid.key().as_ref()], bump
     )]
     pub ip_account: Account<'info, IPAccount>,
 
@@ -83,11 +80,11 @@ pub struct CreateIPAccount<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(ipid: String)]
+#[instruction(ipid: Pubkey)]
 pub struct DeleteIPAccount<'info> {
     #[account(
         mut, close = signer,
-        seeds = [b"ip", ipid.as_bytes().as_ref()], bump
+        seeds = [b"ip", ipid.key().as_ref()], bump
     )]
     pub ip_account: Account<'info, IPAccount>,
     
@@ -98,15 +95,53 @@ pub struct DeleteIPAccount<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(ipid: String)]
+#[instruction(ipid: Pubkey, value: String)]
+pub struct UpdateIPAccountLink<'info> {
+    #[account(
+        mut,
+        seeds = [b"ip", ipid.key().as_ref()],
+        bump,
+        realloc = 8 + 32 + 4 + value.len() + 4 + ip_account.intro.len() + 32 + 8,
+        realloc::zero = false,
+        realloc::payer = signer,
+    )]
+    pub ip_account: Account<'info, IPAccount>,
+    
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    
+    pub system_program: Program<'info, System>
+}
+
+#[derive(Accounts)]
+#[instruction(ipid: Pubkey, value: String)]
+pub struct UpdateIPAccountIntro<'info> {
+    #[account(
+        mut,
+        seeds = [b"ip", ipid.key().as_ref()],
+        bump,
+        realloc = 8 + 32 + 4 + value.len() + 4 + ip_account.intro.len() + 32 + 8,
+        realloc::zero = false,
+        realloc::payer = signer,
+    )]
+    pub ip_account: Account<'info, IPAccount>,
+    
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    
+    pub system_program: Program<'info, System>
+}
+
+#[derive(Accounts)]
+#[instruction(ipid: Pubkey)]
 pub struct Publish<'info> {
     #[account(
         init, payer = signer, space = 8 + CIAccount::INIT_SPACE,
-        seeds = [b"ci", ipid.as_bytes().as_ref()], bump
+        seeds = [b"ci", ipid.key().as_ref()], bump
     )]
     pub ci_account: Account<'info, CIAccount>,
     
-    #[account(mut, seeds = [b"ip", ipid.as_bytes().as_ref()], bump)]
+    #[account(mut, seeds = [b"ip", ipid.key().as_ref()], bump)]
     pub ip_account: Account<'info, IPAccount>,
 
     #[account(mut, constraint = signer.key().eq(&ip_account.owner))]
@@ -117,7 +152,7 @@ pub struct Publish<'info> {
 
 
 #[derive(Accounts)]
-#[instruction(ipid: String)]
+#[instruction(ipid: Pubkey)]
 pub struct  Pay<'info> {
     #[account(
         init, payer = signer, space = 8 + CPAccount::INIT_SPACE,
@@ -125,10 +160,10 @@ pub struct  Pay<'info> {
     )]
     pub cp_account: Account<'info, CPAccount>,
 
-    #[account(mut, seeds = [b"ci", ipid.as_bytes().as_ref()], bump)]
+    #[account(mut, seeds = [b"ci", ipid.key().as_ref()], bump)]
     pub ci_account: Account<'info, CIAccount>,
 
-    #[account(mut, seeds = [b"ip", ipid.as_bytes().as_ref()], bump)]
+    #[account(mut, seeds = [b"ip", ipid.key().as_ref()], bump)]
     pub ip_account: Account<'info, IPAccount>,
 
     #[account(mut)]
@@ -139,12 +174,12 @@ pub struct  Pay<'info> {
 
 
 #[derive(Accounts)]
-#[instruction(ipid: String)]
+#[instruction(ipid: Pubkey)]
 pub struct Withdraw<'info> {
-    #[account(mut, seeds = [b"ci", ipid.as_bytes().as_ref()], bump)]
+    #[account(mut, seeds = [b"ci", ipid.key().as_ref()], bump)]
     pub ci_account: Account<'info, CIAccount>,
 
-    #[account(mut, seeds = [b"ip", ipid.as_bytes().as_ref()], bump)]
+    #[account(mut, seeds = [b"ip", ipid.key().as_ref()], bump)]
     pub ip_account: Account<'info, IPAccount>,
 
     #[account(
@@ -160,9 +195,9 @@ pub struct Withdraw<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(ipid: String)]
+#[instruction(ipid: Pubkey)]
 pub struct  Bonus<'info> {
-    #[account(mut, seeds = [b"ci", ipid.as_bytes().as_ref()], bump)]
+    #[account(mut, seeds = [b"ci", ipid.key().as_ref()], bump)]
     pub ci_account: Account<'info, CIAccount>,
 
     #[account(mut, seeds = [b"cp", signer.key().as_ref(), ci_account.key().as_ref()], bump)]

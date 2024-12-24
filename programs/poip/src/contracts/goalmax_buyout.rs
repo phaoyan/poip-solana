@@ -1,19 +1,19 @@
 use anchor_lang::{prelude::*, system_program};
 
-use crate::{Bonus, Pay, Publish, Withdraw, CONTRACT_TYPE_GOALMAX_BUYOUT, IP_OWNERSHIP_PRIVATE, IP_OWNERSHIP_PUBLIC, IP_OWNERSHIP_PUBLISHED};
+use crate::{Bonus, Pay, Publish, Withdraw, IP_OWNERSHIP_PRIVATE, IP_OWNERSHIP_PUBLIC, IP_OWNERSHIP_PUBLISHED};
 use crate::state::ErrorCode;
 
-pub fn publish(ctx: Context<Publish>, _ipid: String, price: u64, goalcount: u64, maxcount: u64) -> Result<()> {
+pub fn publish(ctx: Context<Publish>, _ipid: Pubkey, price: u64, goalcount: u64, maxcount: u64) -> Result<()> {
     let ip_account = &mut ctx.accounts.ip_account;
     let ci_account = &mut ctx.accounts.ci_account;
 
     require!(ip_account.ownership.eq(&IP_OWNERSHIP_PRIVATE), ErrorCode::WrongIPOwnership);
     require!(price > 0, ErrorCode::InvalidPrice);
     require!(goalcount > 0, ErrorCode::InvalidGoalcount);
-    require!(maxcount > goalcount, ErrorCode::InvalidMaxcount);
+    require!(maxcount >= goalcount, ErrorCode::InvalidMaxcount);
 
     ip_account.ownership = IP_OWNERSHIP_PUBLISHED;
-    ci_account.contract_type = CONTRACT_TYPE_GOALMAX_BUYOUT;
+    ci_account.ip_account = ip_account.key();
     ci_account.price = price;
     ci_account.goalcount = goalcount;
     ci_account.maxcount  = maxcount;
@@ -23,7 +23,7 @@ pub fn publish(ctx: Context<Publish>, _ipid: String, price: u64, goalcount: u64,
     Ok(())
 }
 
-pub fn pay(ctx: Context<Pay>, _ipid: String) -> Result<()> {
+pub fn pay(ctx: Context<Pay>, _ipid: Pubkey) -> Result<()> {
     let ip_account   = &mut ctx.accounts.ip_account;
     let ci_account = &mut ctx.accounts.ci_account;
     let cp_account = &mut ctx.accounts.cp_account;
@@ -33,11 +33,11 @@ pub fn pay(ctx: Context<Pay>, _ipid: String) -> Result<()> {
         if ci_account.currcount < ci_account.goalcount { 0 } 
         else { (ci_account.currcount + 1 - ci_account.goalcount) * ci_account.price / (ci_account.currcount + 1) }; 
     
-    require!(ci_account.contract_type.eq(&CONTRACT_TYPE_GOALMAX_BUYOUT), ErrorCode::WrongContractType);
     require!(ip_account.ownership.eq(&IP_OWNERSHIP_PUBLISHED), ErrorCode::WrongIPOwnership);
     require!(ci_account.currcount < ci_account.maxcount, ErrorCode::WrongIPOwnership);
 
     ci_account.currcount += 1;
+    cp_account.ip_account = ip_account.key();
     cp_account.withdrawal += withdrawable;
 
     if ci_account.currcount == ci_account.maxcount {
@@ -54,12 +54,11 @@ pub fn pay(ctx: Context<Pay>, _ipid: String) -> Result<()> {
     system_program::transfer(cpi, ci_account.price - withdrawable)
 }
 
-pub fn withdraw(ctx: Context<Withdraw>, _ipid: String) -> Result<()> {
+pub fn withdraw(ctx: Context<Withdraw>, _ipid: Pubkey) -> Result<()> {
     let ci_account = &mut ctx.accounts.ci_account;
     let owner = &mut ctx.accounts.owner_account;
     let withdrawable = std::cmp::min(ci_account.currcount, ci_account.goalcount) - ci_account.withdrawal_count;
 
-    require!(ci_account.contract_type.eq(&CONTRACT_TYPE_GOALMAX_BUYOUT), ErrorCode::WrongContractType);
     require!(std::cmp::min(ci_account.currcount, ci_account.goalcount) > ci_account.withdrawal_count, ErrorCode::ContractHasNoLamports);
 
     ci_account.withdrawal_count += withdrawable;
@@ -69,7 +68,7 @@ pub fn withdraw(ctx: Context<Withdraw>, _ipid: String) -> Result<()> {
     Ok(())
 }
 
-pub fn bonus(ctx: Context<Bonus>, _ipid: String) -> Result<()> {
+pub fn bonus(ctx: Context<Bonus>, _ipid: Pubkey) -> Result<()> {
     let ci_account = &mut ctx.accounts.ci_account;
     let cp_account = &mut ctx.accounts.cp_account;
     let payer = &mut ctx.accounts.user_account;
@@ -77,7 +76,6 @@ pub fn bonus(ctx: Context<Bonus>, _ipid: String) -> Result<()> {
         if ci_account.currcount <= ci_account.goalcount { 0 } 
         else { (ci_account.currcount - ci_account.goalcount) * ci_account.price / ci_account.currcount - cp_account.withdrawal };
 
-    require!(ci_account.contract_type.eq(&CONTRACT_TYPE_GOALMAX_BUYOUT), ErrorCode::WrongContractType);
     require!(withdrawable > 0, ErrorCode::ContractHasNoLamports);
 
     cp_account.withdrawal += withdrawable;

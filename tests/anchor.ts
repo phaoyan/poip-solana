@@ -14,9 +14,6 @@ const IP_OWNERSHIP_PRIVATE = 1
 const IP_OWNERSHIP_PUBLISHED = 2
 const IP_OWNERSHIP_PUBLIC = 3
 
-const CONTRACT_TYPE_FINITE_BUYOUT = 1
-const CONTRACT_TYPE_COMPENSATIVE_BUYOUT = 2
-const CONTRACT_TYPE_GOALMAX_BUYOUT = 3
 
 describe("Test", async () => {
   // Configure the client to use the local cluster
@@ -39,8 +36,7 @@ describe("Test", async () => {
 
   interface IP {
     link: string
-    ipid: string
-    contract_type: number
+    ipid: PublicKey
     ip_account: PublicKey
     contract_account: PublicKey
     contract_data: {
@@ -50,36 +46,38 @@ describe("Test", async () => {
     }
   }[] = []
 
+  const IPID_1 = Keypair.generate().publicKey
   const IP_1: IP = {
     link: "test-book",
-    ipid: "123456",
-    contract_type: CONTRACT_TYPE_FINITE_BUYOUT,
-    ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("123456")], program.programId)[0],
-    contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), Buffer.from("123456")], program.programId)[0],
+    ipid: IPID_1,
+    ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   IPID_1.toBuffer()], program.programId)[0],
+    contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), IPID_1.toBuffer()], program.programId)[0],
     contract_data: {
       price: 1 * LAMPORTS_PER_SOL,
       goalcount: 5,
-      maxcount: USER_COUNT // 无效
+      maxcount: 5 // 无效
     }
   }
+
+  const IPID_2 = Keypair.generate().publicKey
   const IP_2: IP = {
     link: "test-movie",
-    ipid: "114514",
-    contract_type: CONTRACT_TYPE_COMPENSATIVE_BUYOUT,
-    ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("114514")], program.programId)[0],
-    contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), Buffer.from("114514")], program.programId)[0],
+    ipid: IPID_2,
+    ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   IPID_2.toBuffer()], program.programId)[0],
+    contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), IPID_2.toBuffer()], program.programId)[0],
     contract_data: {
       price: 1 * LAMPORTS_PER_SOL,
       goalcount: 5,
-      maxcount: USER_COUNT // 无效
+      maxcount: 10000000 // 无效
     }
   }
+
+  const IPID_3 = Keypair.generate().publicKey
   const IP_3: IP = {
     link: "test-anime",
-    ipid: "987654321",
-    contract_type: CONTRACT_TYPE_GOALMAX_BUYOUT,
-    ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("987654321")], program.programId)[0],
-    contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), Buffer.from("987654321")], program.programId)[0],
+    ipid: IPID_3,
+    ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   IPID_3.toBuffer()], program.programId)[0],
+    contract_account: PublicKey.findProgramAddressSync([Buffer.from("ci"), IPID_3.toBuffer()], program.programId)[0],
     contract_data: {
       price: 1 * LAMPORTS_PER_SOL,
       goalcount: 5,
@@ -104,7 +102,7 @@ describe("Test", async () => {
     for(let IP of [IP_1, IP_2, IP_3]) {
       let tx = new anchor.web3.Transaction()
       const inst_create_ip = await program.methods
-        .createIpAccount(IP.ipid, IP.link)
+        .createIpAccount(IP.ipid, IP.link, "Introduction Link")
         .signers([USERS[0].keypair])
         .accounts({
           ipAccount: IP.ip_account,
@@ -117,7 +115,7 @@ describe("Test", async () => {
 
     let ip_account_data = await program.account.ipAccount.fetch(IP_1.ip_account)
     assert(ip_account_data.link == IP_1.link)
-    assert(ip_account_data.ipid  == IP_1.ipid)
+    assert(ip_account_data.ipid.equals(IP_1.ipid))
     assert(ip_account_data.owner.equals(USERS[0].keypair.publicKey))
     assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PRIVATE)))
   })
@@ -129,8 +127,7 @@ describe("Test", async () => {
           ip.ipid, 
           new BN(ip.contract_data.price), 
           new BN(ip.contract_data.goalcount), 
-          new BN(ip.contract_data.maxcount), 
-          new BN(ip.contract_type))
+          new BN(ip.contract_data.maxcount))
         .signers([USERS[0].keypair])
         .accounts({
           ciAccount: ip.contract_account,
@@ -146,8 +143,7 @@ describe("Test", async () => {
         IP_1.ipid,
         new BN(10),
         new BN(10),
-        new BN(12),
-        new BN(CONTRACT_TYPE_COMPENSATIVE_BUYOUT))
+        new BN(12))
       .signers([USERS[0].keypair])
       .accounts({
         ciAccount: IP_1.contract_account,

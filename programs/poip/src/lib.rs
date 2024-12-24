@@ -23,47 +23,36 @@ mod poip {
         general::delete_user_account(ctx)
     }
 
-    pub fn create_ip_account(ctx: Context<CreateIPAccount>, ipid: String, link: String) -> Result<()> {
-        general::create_ip_account(ctx, ipid, link)
+    pub fn create_ip_account(ctx: Context<CreateIPAccount>, ipid: Pubkey, link: String, intro: String) -> Result<()> {
+        general::create_ip_account(ctx, ipid, link, intro)
     }
 
-    pub fn delete_ip_account(ctx: Context<DeleteIPAccount>, ipid: String) -> Result<()> {
+    pub fn delete_ip_account(ctx: Context<DeleteIPAccount>, ipid: Pubkey) -> Result<()> {
         general::delete_ip_account(ctx, ipid)
     }
 
-    pub  fn publish(ctx: Context<Publish>, ipid: String, price: u64, goalcount: u64, maxcount: u64, contract_type: u64) -> Result<()> {
-        match contract_type {
-            CONTRACT_TYPE_GOALMAX_BUYOUT => goalmax_buyout::publish(ctx, ipid, price, goalcount, maxcount),
-            CONTRACT_TYPE_COMPENSATIVE_BUYOUT => compensative_buyout::publish(ctx, ipid, price, goalcount, maxcount),
-            CONTRACT_TYPE_FINITE_BUYOUT => finite_buyout::publish(ctx, ipid, price, goalcount, maxcount),
-            _ => Ok(())
-        }
+    pub fn update_ip_account_link(ctx: Context<UpdateIPAccountLink>, ipid: Pubkey, value: String) -> Result<()> {
+        general::update_ip_account_link(ctx, ipid, value)
     }
 
-    pub fn pay(ctx: Context<Pay>, ipid: String) -> Result<()> {
-        match ctx.accounts.ci_account.contract_type {
-            CONTRACT_TYPE_GOALMAX_BUYOUT => goalmax_buyout::pay(ctx, ipid),
-            CONTRACT_TYPE_COMPENSATIVE_BUYOUT => compensative_buyout::pay(ctx, ipid),
-            CONTRACT_TYPE_FINITE_BUYOUT => finite_buyout::pay(ctx, ipid),
-            _ => Ok(())
-        }
+    pub fn update_ip_account_intro(ctx: Context<UpdateIPAccountIntro>, ipid: Pubkey, value: String) -> Result<()> {
+        general::update_ip_account_intro(ctx, ipid, value)
     }
 
-    pub fn withraw(ctx: Context<Withdraw>, ipid: String) -> Result<()> {
-        match ctx.accounts.ci_account.contract_type {
-            CONTRACT_TYPE_GOALMAX_BUYOUT => goalmax_buyout::withdraw(ctx, ipid),
-            CONTRACT_TYPE_COMPENSATIVE_BUYOUT => compensative_buyout::withdraw(ctx, ipid),
-            CONTRACT_TYPE_FINITE_BUYOUT => finite_buyout::withdraw(ctx, ipid),
-            _ => Ok(())
-        }
+    pub  fn publish(ctx: Context<Publish>, ipid: Pubkey, price: u64, goalcount: u64, maxcount: u64) -> Result<()> {
+        goalmax_buyout::publish(ctx, ipid, price, goalcount, maxcount)
     }
 
-    pub fn bonus(ctx: Context<Bonus>, ipid: String) -> Result<()> {
-        match ctx.accounts.ci_account.contract_type {
-            CONTRACT_TYPE_GOALMAX_BUYOUT => goalmax_buyout::bonus(ctx, ipid),
-            CONTRACT_TYPE_COMPENSATIVE_BUYOUT => compensative_buyout::bonus(ctx, ipid),
-            _ => Ok(())
-        }
+    pub fn pay(ctx: Context<Pay>, ipid: Pubkey) -> Result<()> {
+        goalmax_buyout::pay(ctx, ipid)
+    }
+
+    pub fn withraw(ctx: Context<Withdraw>, ipid: Pubkey) -> Result<()> {
+        goalmax_buyout::withdraw(ctx, ipid)
+    }
+
+    pub fn bonus(ctx: Context<Bonus>, ipid: Pubkey) -> Result<()> {
+        goalmax_buyout::bonus(ctx, ipid)
     }
 
 

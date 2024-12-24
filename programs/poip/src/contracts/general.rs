@@ -11,9 +11,9 @@ pub fn delete_user_account(_ctx: Context<DeleteUserAccount>) -> Result<()> {
     Ok(())
 }
 
-pub fn create_ip_account(ctx: Context<CreateIPAccount>, ipid: String, title: String) -> Result<()> {
+pub fn create_ip_account(ctx: Context<CreateIPAccount>, ipid: String, link: String) -> Result<()> {
     ctx.accounts.ip_account.ipid = ipid;
-    ctx.accounts.ip_account.title = title;
+    ctx.accounts.ip_account.link = link;
     ctx.accounts.ip_account.owner = ctx.accounts.signer.key();
     ctx.accounts.ip_account.ownership = IP_OWNERSHIP_PRIVATE;
 

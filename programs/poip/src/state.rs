@@ -7,7 +7,7 @@ pub const IP_OWNERSHIP_PUBLIC: u64 = 3;
 #[account]
 pub struct IPAccount {
     pub ipid: String,
-    pub title: String,
+    pub link: String, // IPFS Link, 包括了一个公开的介绍信息文件和一个对称加密的IP内容文件
     pub owner: Pubkey,
     pub ownership: u64, // 见 IP_OWNERSHIP
 }

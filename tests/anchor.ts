@@ -25,7 +25,7 @@ describe("Test", async () => {
 
   const connection = anchor.getProvider().connection
   
-  const wallet_sk = Uint8Array.from(JSON.parse(readFileSync("/home/solana/poip-solana/tests/wallets/id.json", "utf-8")))
+  const wallet_sk = Uint8Array.from(JSON.parse(readFileSync("/root/.config/solana/id.json", "utf-8")))
   const wallet = anchor.web3.Keypair.fromSecretKey(wallet_sk)
 
   const INIT_LAMPORT = 5 * LAMPORTS_PER_SOL
@@ -38,7 +38,7 @@ describe("Test", async () => {
   }[] = []
 
   interface IP {
-    title: string
+    link: string
     ipid: string
     contract_type: number
     ip_account: PublicKey
@@ -51,7 +51,7 @@ describe("Test", async () => {
   }[] = []
 
   const IP_1: IP = {
-    title: "test-book",
+    link: "test-book",
     ipid: "123456",
     contract_type: CONTRACT_TYPE_FINITE_BUYOUT,
     ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("123456")], program.programId)[0],
@@ -63,7 +63,7 @@ describe("Test", async () => {
     }
   }
   const IP_2: IP = {
-    title: "test-movie",
+    link: "test-movie",
     ipid: "114514",
     contract_type: CONTRACT_TYPE_COMPENSATIVE_BUYOUT,
     ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("114514")], program.programId)[0],
@@ -75,7 +75,7 @@ describe("Test", async () => {
     }
   }
   const IP_3: IP = {
-    title: "test-anime",
+    link: "test-anime",
     ipid: "987654321",
     contract_type: CONTRACT_TYPE_GOALMAX_BUYOUT,
     ip_account: PublicKey.findProgramAddressSync([Buffer.from("ip"),   Buffer.from("987654321")], program.programId)[0],
@@ -104,7 +104,7 @@ describe("Test", async () => {
     for(let IP of [IP_1, IP_2, IP_3]) {
       let tx = new anchor.web3.Transaction()
       const inst_create_ip = await program.methods
-        .createIpAccount(IP.ipid, IP.title)
+        .createIpAccount(IP.ipid, IP.link)
         .signers([USERS[0].keypair])
         .accounts({
           ipAccount: IP.ip_account,
@@ -116,7 +116,7 @@ describe("Test", async () => {
     }
 
     let ip_account_data = await program.account.ipAccount.fetch(IP_1.ip_account)
-    assert(ip_account_data.title == IP_1.title)
+    assert(ip_account_data.link == IP_1.link)
     assert(ip_account_data.ipid  == IP_1.ipid)
     assert(ip_account_data.owner.equals(USERS[0].keypair.publicKey))
     assert(ip_account_data.ownership.eq(new BN(IP_OWNERSHIP_PRIVATE)))

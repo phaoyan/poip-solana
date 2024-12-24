@@ -9,7 +9,7 @@ use contracts::*;
 
 // This is your program's public key and it will update
 // automatically when you build the project.
-declare_id!("6xSaDiBZ4R6i7Rk47zcRvuuNGeJ8NRApRfPqWksS7Xe2");
+declare_id!("GPN5tAQi5PMCGYuVFMb4tnXrhQwXAjes2mSoGXzb3RML");
 
 #[program]
 mod poip {
@@ -23,8 +23,8 @@ mod poip {
         general::delete_user_account(ctx)
     }
 
-    pub fn create_ip_account(ctx: Context<CreateIPAccount>, ipid: String, title: String) -> Result<()> {
-        general::create_ip_account(ctx, ipid, title)
+    pub fn create_ip_account(ctx: Context<CreateIPAccount>, ipid: String, link: String) -> Result<()> {
+        general::create_ip_account(ctx, ipid, link)
     }
 
     pub fn delete_ip_account(ctx: Context<DeleteIPAccount>, ipid: String) -> Result<()> {

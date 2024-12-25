@@ -3,7 +3,7 @@ use anchor_lang::{prelude::*, system_program};
 use crate::{Bonus, Pay, Publish, Withdraw, IP_OWNERSHIP_PRIVATE, IP_OWNERSHIP_PUBLIC, IP_OWNERSHIP_PUBLISHED};
 use crate::state::ErrorCode;
 
-pub fn publish(ctx: Context<Publish>, _ipid: Pubkey, price: u64, goalcount: u64, maxcount: u64) -> Result<()> {
+pub fn publish(ctx: Context<Publish>, ipid: Pubkey, price: u64, goalcount: u64, maxcount: u64) -> Result<()> {
     let ip_account = &mut ctx.accounts.ip_account;
     let ci_account = &mut ctx.accounts.ci_account;
 
@@ -13,7 +13,7 @@ pub fn publish(ctx: Context<Publish>, _ipid: Pubkey, price: u64, goalcount: u64,
     require!(maxcount >= goalcount, ErrorCode::InvalidMaxcount);
 
     ip_account.ownership = IP_OWNERSHIP_PUBLISHED;
-    ci_account.ip_account = ip_account.key();
+    ci_account.ipid = ipid;
     ci_account.price = price;
     ci_account.goalcount = goalcount;
     ci_account.maxcount  = maxcount;
@@ -23,7 +23,7 @@ pub fn publish(ctx: Context<Publish>, _ipid: Pubkey, price: u64, goalcount: u64,
     Ok(())
 }
 
-pub fn pay(ctx: Context<Pay>, _ipid: Pubkey) -> Result<()> {
+pub fn pay(ctx: Context<Pay>, ipid: Pubkey) -> Result<()> {
     let ip_account   = &mut ctx.accounts.ip_account;
     let ci_account = &mut ctx.accounts.ci_account;
     let cp_account = &mut ctx.accounts.cp_account;
@@ -37,7 +37,8 @@ pub fn pay(ctx: Context<Pay>, _ipid: Pubkey) -> Result<()> {
     require!(ci_account.currcount < ci_account.maxcount, ErrorCode::WrongIPOwnership);
 
     ci_account.currcount += 1;
-    cp_account.ip_account = ip_account.key();
+    cp_account.ipid = ipid;
+    cp_account.owner      = ctx.accounts.signer.key();
     cp_account.withdrawal += withdrawable;
 
     if ci_account.currcount == ci_account.maxcount {

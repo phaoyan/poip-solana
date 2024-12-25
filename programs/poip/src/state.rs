@@ -23,7 +23,7 @@ pub struct UserAccount { // 用于存储临时的Lamports，通过 close 这个�
 #[account]
 #[derive(InitSpace)]
 pub struct CIAccount { // Contract Issue Account
-    pub ip_account: Pubkey,
+    pub ipid: Pubkey,
     pub price: u64,
     pub goalcount: u64,
     pub currcount: u64,
@@ -34,7 +34,8 @@ pub struct CIAccount { // Contract Issue Account
 #[account]
 #[derive(InitSpace)]
 pub struct CPAccount { // Contract Payment Account
-    pub ip_account: Pubkey,
+    pub ipid: Pubkey,
+    pub owner: Pubkey,
     pub withdrawal: u64,
 }
 

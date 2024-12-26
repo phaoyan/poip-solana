@@ -1,15 +1,74 @@
 use anchor_lang::prelude::*;
 
-use crate::{CreateIPAccount, CreateUserAccount, DeleteIPAccount, DeleteUserAccount, UpdateIPAccountIntro, UpdateIPAccountLink, IP_OWNERSHIP_PRIVATE};
+use crate::{IPAccount, IP_OWNERSHIP_PRIVATE};
 use crate::state::ErrorCode;
 
-pub fn create_user_account(ctx: Context<CreateUserAccount>) -> Result<()> {
-    ctx.accounts.user_account.user_addr = ctx.accounts.signer.key();
-    Ok(())
+#[derive(Accounts)]
+#[instruction(ipid: Pubkey, link: String, intro: String)]
+pub struct CreateIPAccount<'info> {
+    #[account(
+        init, payer = signer, space = 8 + 32 + 4 + link.len() + 4 + intro.len() + 32 + 8,
+        seeds = [b"ip", ipid.key().as_ref()], bump
+    )]
+    pub ip_account: Account<'info, IPAccount>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    pub system_program: Program<'info, System>
 }
 
-pub fn delete_user_account(_ctx: Context<DeleteUserAccount>) -> Result<()> {
-    Ok(())
+#[derive(Accounts)]
+#[instruction(ipid: Pubkey)]
+pub struct DeleteIPAccount<'info> {
+    #[account(
+        mut, close = signer,
+        seeds = [b"ip", ipid.key().as_ref()], bump
+    )]
+    pub ip_account: Account<'info, IPAccount>,
+    
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    
+    pub system_program: Program<'info, System>
+}
+
+#[derive(Accounts)]
+#[instruction(ipid: Pubkey, value: String)]
+pub struct UpdateIPAccountLink<'info> {
+    #[account(
+        mut,
+        seeds = [b"ip", ipid.key().as_ref()],
+        bump,
+        realloc = 8 + 32 + 4 + value.len() + 4 + ip_account.intro.len() + 32 + 8,
+        realloc::zero = false,
+        realloc::payer = signer,
+    )]
+    pub ip_account: Account<'info, IPAccount>,
+    
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    
+    pub system_program: Program<'info, System>
+}
+
+#[derive(Accounts)]
+#[instruction(ipid: Pubkey, value: String)]
+pub struct UpdateIPAccountIntro<'info> {
+    #[account(
+        mut,
+        seeds = [b"ip", ipid.key().as_ref()],
+        bump,
+        realloc = 8 + 32 + 4 + value.len() + 4 + ip_account.intro.len() + 32 + 8,
+        realloc::zero = false,
+        realloc::payer = signer,
+    )]
+    pub ip_account: Account<'info, IPAccount>,
+    
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    
+    pub system_program: Program<'info, System>
 }
 
 pub fn create_ip_account(ctx: Context<CreateIPAccount>, ipid: Pubkey, link: String, intro: String) -> Result<()> {
@@ -32,7 +91,7 @@ pub fn update_ip_account_intro(ctx: Context<UpdateIPAccountIntro>, _ipid: Pubkey
     Ok(())
 }
 
-pub fn delete_ip_account(_ctx: Context<DeleteIPAccount>, _ipid: Pubkey) -> Result<()> {
-    require!(_ctx.accounts.ip_account.ownership.eq(&IP_OWNERSHIP_PRIVATE), ErrorCode::WrongIPOwnership);
+pub fn delete_ip_account(ctx: Context<DeleteIPAccount>, _ipid: Pubkey) -> Result<()> {
+    require!(ctx.accounts.ip_account.ownership.eq(&IP_OWNERSHIP_PRIVATE), ErrorCode::WrongIPOwnership);
     Ok(())
 }

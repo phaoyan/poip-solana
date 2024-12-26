@@ -4,8 +4,8 @@ mod contracts;
 use anchor_lang::prelude::*;
 use state::*;
 use contracts::*;
-
-
+use goalmax_buyout::*;
+use general::*;
 
 // This is your program's public key and it will update
 // automatically when you build the project.
@@ -14,14 +14,6 @@ declare_id!("GPN5tAQi5PMCGYuVFMb4tnXrhQwXAjes2mSoGXzb3RML");
 #[program]
 mod poip {
     use super::*;
-    
-    pub fn create_user_account(ctx: Context<CreateUserAccount>) -> Result<()> {
-        general::create_user_account(ctx)
-    }
-
-    pub fn delete_user_account(ctx: Context<DeleteUserAccount>) -> Result<()> {
-        general::delete_user_account(ctx)
-    }
 
     pub fn create_ip_account(ctx: Context<CreateIPAccount>, ipid: Pubkey, link: String, intro: String) -> Result<()> {
         general::create_ip_account(ctx, ipid, link, intro)
@@ -55,6 +47,4 @@ mod poip {
         goalmax_buyout::bonus(ctx, ipid)
     }
 
-
 }
-

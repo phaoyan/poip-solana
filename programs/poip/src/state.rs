@@ -6,11 +6,11 @@ pub const IP_OWNERSHIP_PUBLIC: u64 = 3;
 
 #[account]
 pub struct IPAccount {
+    pub ownership: u64, // 见 IP_OWNERSHIP
     pub ipid: Pubkey,  //32字节随机ID
     pub link: String,  //IPFS Link, 包括了对称加密的IP内容文件
     pub intro: String, //IPFS Link, 用于存放介绍信息，为JSON
     pub owner: Pubkey,
-    pub ownership: u64, // 见 IP_OWNERSHIP
 }
 
 #[account]
